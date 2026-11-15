@@ -1,0 +1,10 @@
+# Copyright 2026 Thomas C. Burns
+# SPDX-License-Identifier: Apache-2.0
+#
+# Issue chooser: no blank issues; vulnerabilities go to private reporting (SECURITY.md).
+
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/thomascburns/ssc-guardian/security/advisories/new
+    about: Report a suspected vulnerability in Guardian privately, through GitHub's private vulnerability reporting. Do not open a public issue for it.

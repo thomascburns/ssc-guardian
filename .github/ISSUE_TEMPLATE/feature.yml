@@ -1,0 +1,35 @@
+# Copyright 2026 Thomas C. Burns
+# SPDX-License-Identifier: Apache-2.0
+#
+# Issue form for a gap in the documents (CONTRIBUTING.md "Issues").
+
+name: Documentation gap
+description: A document that leaves something out or says something wrong.
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you post, remove anything private: tokens, private repository names, paths and
+        package names you do not want to publish.
+
+        Do not report a suspected vulnerability here. Report it privately, as
+        [SECURITY.md](https://github.com/thomascburns/ssc-guardian/blob/main/SECURITY.md) describes.
+
+        A reply is not guaranteed.
+
+  - type: input
+    id: document
+    attributes:
+      label: Document and section
+      description: Which document, and which section of it (for example README.md, "Known limits").
+    validations:
+      required: true
+
+  - type: textarea
+    id: gap
+    attributes:
+      label: What is missing or wrong
+      description: What the document leaves out or gets wrong, and what you expected to find.
+    validations:
+      required: true

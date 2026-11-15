@@ -1,0 +1,181 @@
+# Copyright 2026 Thomas C. Burns
+# SPDX-License-Identifier: Apache-2.0
+#
+# Release workflow (plan §5 "Release workflow" and "Release testing").
+#
+# - Public repository (thomascburns/ssc-guardian): only a pushed tag
+#   v*-reference runs it, so the wheel is always built from the tagged commit.
+#   It builds the wheel, attests it (keyless Sigstore signing through GitHub, no
+#   named key) and creates the release as a draft with the wheel and its SHA-256
+#   attached. Files must be attached while a release is a draft (plan §8 fact
+#   16); the owner publishes only after the clean-Mac test. A wheel whose
+#   version does not match a release tag is refused.
+# - Development repository: the rehearsal. Only a manual run starts its jobs
+#   (a tag pushed there runs no job); the same jobs run without the attestation
+#   step, which needs a public repository on this plan (fact 15).
+#
+# Least privilege: the workflow reads only; `build` runs the build tool with a
+# read-only token and no OIDC token; `attest` alone may mint an OIDC token and
+# write attestations; `release` alone may write contents. Every Action is pinned
+# to a 40-hex commit SHA with its tag as a comment. The build tool comes only
+# from requirements-release.txt, installed from wheels with --require-hashes.
+# No ${{ }} expression appears inside a run: script; values reach the shell
+# through env. The development repository's tests check each of these points.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*-reference"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Rehearsal tag (development repository only), for example v1.0-rc1-reference"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    # The public repository releases only from a pushed tag; the development repository runs only a
+    # manual rehearsal.
+    if: (github.event_name == 'push' && github.repository == 'thomascburns/ssc-guardian') || (github.event_name == 'workflow_dispatch' && github.repository != 'thomascburns/ssc-guardian')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check the release tag
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){1,2}(-rc[0-9]+)?-reference$ ]]; then
+            echo "Refusing release tag '$RELEASE_TAG': expected v<major>.<minor>[.<patch>][-rc<n>]-reference." >&2
+            exit 1
+          fi
+          # Rehearsal (-rc<n>) tags belong to the development repository; the public one releases only real versions.
+          if [[ "$RELEASE_TAG" =~ -rc[0-9]+-reference$ && "$GITHUB_REPOSITORY" == "thomascburns/ssc-guardian" ]]; then
+            echo "Refusing rehearsal tag '$RELEASE_TAG' in the public repository." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install the hash-locked build tool
+        run: |
+          python -m venv "$RUNNER_TEMP/build-venv"
+          "$RUNNER_TEMP/build-venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: -r requirements-release.txt
+      # --no-isolation: the backend (setuptools) comes from requirements-release.txt;
+      # an isolated build would download an unpinned one. --only-binary above keeps pip
+      # from building a source distribution, which would fetch a backend the same way.
+      - name: Build the wheel
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          "$RUNNER_TEMP/build-venv/bin/python" -m build --wheel --no-isolation --outdir dist .
+      - name: Record the wheel's SHA-256
+        working-directory: dist
+        run: |
+          shopt -s nullglob
+          wheels=(ssc_guardian-*-py3-none-any.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "Expected exactly one ssc_guardian wheel, found ${#wheels[@]}." >&2
+            exit 1
+          fi
+          sha256sum "${wheels[0]}" > "${wheels[0]}.sha256"
+          cat "${wheels[0]}.sha256"
+      # A release tag v1.0-reference or v1.0.1-reference needs wheel version 1.0.0 or 1.0.1; a
+      # rehearsal tag (-rc<n>) is never published, so it builds whatever version is checked in.
+      - name: Check the wheel version against the tag
+        working-directory: dist
+        run: |
+          wheels=(ssc_guardian-*-py3-none-any.whl)
+          version="${wheels[0]#ssc_guardian-}"
+          version="${version%%-*}"
+          if [[ "$RELEASE_TAG" =~ -rc[0-9]+-reference$ ]]; then
+            echo "Rehearsal tag $RELEASE_TAG: wheel version $version not checked."
+            exit 0
+          fi
+          want="${RELEASE_TAG#v}"
+          want="${want%-reference}"
+          if [[ "$want" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            want="$want.0"
+          fi
+          if [ "$version" != "$want" ]; then
+            echo "Refusing: tag $RELEASE_TAG needs wheel version $want, but the wheel is $version." >&2
+            exit 1
+          fi
+          echo "Wheel version $version matches $RELEASE_TAG."
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-wheel
+          path: |
+            dist/ssc_guardian-*-py3-none-any.whl
+            dist/ssc_guardian-*-py3-none-any.whl.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  attest:
+    needs: build
+    # Public repository only: the rehearsal is the same workflow without this step (plan §5).
+    if: github.repository == 'thomascburns/ssc-guardian'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-wheel
+          path: dist
+      - name: Check the wheel against its SHA-256
+        working-directory: dist
+        run: sha256sum -c ssc_guardian-*-py3-none-any.whl.sha256
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/ssc_guardian-*-py3-none-any.whl
+
+  release:
+    needs:
+      - build
+      - attest
+    # In the public repository the draft waits for a successful attestation; only the
+    # development repository, where attest is skipped, creates a draft without one.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.attest.result == 'success' || (needs.attest.result == 'skipped' && github.repository != 'thomascburns/ssc-guardian')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-wheel
+          path: dist
+      - name: Check the wheel against its SHA-256
+        working-directory: dist
+        run: sha256sum -c ssc_guardian-*-py3-none-any.whl.sha256
+      # A draft: the owner publishes by hand after the clean-Mac test; publishing makes it immutable.
+      - name: Create the draft release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          wheel="$(ls ssc_guardian-*-py3-none-any.whl)"
+          gh release create "$RELEASE_TAG" "$wheel" "$wheel.sha256" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes "Draft built by the release workflow from $GITHUB_SHA. Verify the wheel before publishing (SECURITY.md)."

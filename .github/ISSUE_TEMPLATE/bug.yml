@@ -1,0 +1,52 @@
+# Copyright 2026 Thomas C. Burns
+# SPDX-License-Identifier: Apache-2.0
+#
+# Issue form for a bug or a wrong verdict. It asks for what CONTRIBUTING.md "Issues" asks for.
+
+name: Bug or wrong verdict
+description: A bug, a finding that should not be there, or a finding that is missing.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you post, remove anything private: tokens, private repository names, paths and
+        package names you do not want to publish. Guardian never prints a token, but a shell
+        history or an environment dump can.
+
+        Do not report a suspected vulnerability here. Report it privately, as
+        [SECURITY.md](https://github.com/thomascburns/ssc-guardian/blob/main/SECURITY.md) describes.
+
+        A reply is not guaranteed.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `ssc-guardian --version`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and exit code
+      description: The command you ran and its exit code (`echo $?` right after it).
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: What Guardian printed, preferably with `--json`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: For a wrong verdict, the finding you expected or the one you did not expect.
+    validations:
+      required: false

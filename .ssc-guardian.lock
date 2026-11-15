@@ -1,0 +1,42 @@
+# Written by ssc-guardian pin. Comments in this file are not kept.
+format = 1
+
+[[pin]]
+action = "actions/attest"
+sha = "1e69f48acb82d1966a394da916b4c1698aa569d6"
+tag = "v4.2.2"
+first_seen = 2026-11-11
+trusted = 2026-08-04
+trusted_source = "activity-log"
+
+[[pin]]
+action = "actions/checkout"
+sha = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+tag = "v7.0.1"
+first_seen = 2026-11-11
+trusted = 2026-07-17
+trusted_source = "activity-log"
+
+[[pin]]
+action = "actions/download-artifact"
+sha = "9000827ccba6bdab643e8b6fd33ac0654aef8333"
+tag = "v8.0.2"
+first_seen = 2026-11-11
+trusted = 2026-10-07
+trusted_source = "activity-log"
+
+[[pin]]
+action = "actions/setup-python"
+sha = "5fda3b95a4ea91299a34e894583c3862153e4b97"
+tag = "v7.0.0"
+first_seen = 2026-11-11
+trusted = 2026-07-20
+trusted_source = "activity-log"
+
+[[pin]]
+action = "actions/upload-artifact"
+sha = "cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+tag = "v7.0.2"
+first_seen = 2026-11-11
+trusted = 2026-10-07
+trusted_source = "activity-log"
