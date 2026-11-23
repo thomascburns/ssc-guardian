@@ -25,10 +25,11 @@ that installation, and is walked too; a named folder is walked for venvs and for
 installations (a Homebrew keg under a named Cellar folder). Base installations under a named path are
 found in the usual places (python.org's framework, Homebrew's Python, Apple's Python, pyenv,
 uv-managed Pythons), and through interpreters in the ``PATH`` folders at or under a named
-path. Each one's package folders in its search order: per-user before main, as ``site.py``
-adds them; a venv's own folder first, then, when ``pyvenv.cfg`` lets it see them, the
-per-user folder and its base's main folder. A named path that does not exist, cannot be read
-or holds no environment is never a pass: the first two are unfinished checks there, and the
+path (a venv's own ``bin`` there names that venv, not a base installation). Each one's
+package folders in its search order: per-user before main, as ``site.py`` adds them; a venv's
+own folder first, then, when ``pyvenv.cfg`` lets it see them, the per-user folder and its
+base's main folder. A named path that does not exist, cannot be read or holds no environment
+is never a pass: the first two are unfinished checks there, and the
 command reports the third (``Survey.empty``).
 
 No interpreter, pip or script found here is ever run (#233): the Python version comes from
@@ -403,6 +404,17 @@ def _matching(base: str, pattern: str, wanted: tuple[str, ...], survey: Survey) 
     return [place for place in places if _at_or_under(place, wanted)]
 
 
+def _venv_home(prefix: str) -> str | None:
+    """The ``home`` (its base's ``bin``) in the ``pyvenv.cfg`` of the venv at ``prefix``, or None
+    when there is none, the file cannot be read or the value is no path (a NUL byte, which
+    ``realpath`` refuses with ``ValueError``)."""
+    try:
+        home = _venv_config(prefix).get("home", "")
+    except OSError:
+        return None
+    return home if home.startswith("/") and "\x00" not in home else None
+
+
 def _candidates(roots: Roots, wanted: tuple[str, ...], survey: Survey) -> list[tuple[Source, str, str]]:
     """Each place at or under a named path where a base installation may be: its source, the
     place, and where it was found (a ``PATH`` entry's program; else the place itself)."""
@@ -421,12 +433,27 @@ def _candidates(roots: Roots, wanted: tuple[str, ...], survey: Survey) -> list[t
     for folder in roots.environ.get("PATH", "").split(os.pathsep):
         if not folder.startswith("/") or not _at_or_under(folder, wanted):  # never list a PATH folder elsewhere
             continue
+        # A venv's own bin (an activated venv) names that venv, not a base installation (#301):
+        # the venv is the candidate, and an interpreter there that is its base's (the one of
+        # that name in pyvenv.cfg's home) only when that base is at or under a named path too.
+        # Any other interpreter there is handled as before. Only a pyvenv.cfg that is, links
+        # resolved, at or under a named path counts, and it is read, nothing is run; a parent
+        # that cannot be searched or a pyvenv.cfg that is outside or cannot be read drops nothing.
+        here = _resolved(folder)
+        config = os.path.join(os.path.dirname(here), "pyvenv.cfg")
+        home = None
+        if os.path.basename(here) == "bin" and os.path.lexists(config) and _at_or_under(_resolved(config), wanted):
+            found.append((Source.PATH, os.path.dirname(here), folder))
+            home = _venv_home(os.path.dirname(here))
         for name in _names(folder, survey):
             if _PATH_PYTHON.fullmatch(name):
                 # The program is never run: its resolved place names the installation.
                 program = os.path.realpath(os.path.join(folder, name))
                 if os.path.basename(os.path.dirname(program)) == "bin":
                     prefix = os.path.dirname(os.path.dirname(program))
+                    base = home is not None and real_place(os.path.join(home, os.path.basename(program))) == program
+                    if base and not _at_or_under(_resolved(prefix), wanted):
+                        continue  # the venv's own base, which no named path names
                     found.append((Source.PATH, prefix, os.path.join(folder, name)))
     # A known place names its source; PATH only adds what none of them holds.
     return sorted(found, key=lambda entry: (entry[0] is Source.PATH, entry[1]))

@@ -4,6 +4,24 @@
 > the development repository's issue tracker and v1.0 plan, which are not public. See
 > [README.md](../README.md), "About these documents".
 
+**This is the design record.** It holds the contracts as the owner approved and froze them, with
+the decisions behind them. To use Guardian, read [docs/reference.md](reference.md): it restates
+these contracts for users, and each of its sections links the section here that it summarizes.
+Section numbers here do not change, because the source code cites them.
+
+**Codes in this record.** Each code names a decision or a part of the v1.0 plan:
+
+| Codes | Meaning |
+|---|---|
+| D1–D18 | The owner's decisions at the contracts checkpoint, listed in §9. |
+| Q1–Q6 | The owner's answers on the settings and override formats, listed in §10.6. |
+| B1, N6, N8, N-4 | The owner's rulings on the review of the first implementation of §10, listed in §10.6. |
+| L1–L3 | The owner's answers on the lock-file format, listed in §11.4. |
+| T1–T6 | The plan's six GitHub Actions threats: T1 moving tag, T2 malicious release (the cooldown and its start date), T3 wrong publisher, T4 impostor commit, T5 nested Action, T6 known vulnerability. |
+| R1-K…, R2-K…, FC-… | Decisions from the plan's review: R1 and R2 are its two audit rounds and FC its focused check. R1-K7 is YAML and output; R1-K5 CI settings; R2-K3 the CI mechanism; R2-K4 re-checking overrides against KEV; FC-3 CI trusting the committed lock file. |
+| M1–M3 | Milestones of the v1.0 plan, which runs from M0 to M3 in order. |
+| fact N | Row N of the plan's table of vendor facts (plan §8), the outside facts the code relies on; source comments cite them. |
+
 **Status: APPROVED by the owner at the contracts-frozen checkpoint (plan §6) on 2026-11-02,
 with the decisions in §9. Frozen.** The settings, override and lock-file formats were added as
 each was approved (D1): §10 and §11 on 2026-11-03. The finding-ID formula froze when #4
@@ -33,7 +51,7 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
 
 | Command | Flags | `--yes` | `--json` |
 |---|---|---|---|
-| `check` | `--path P` (repeatable) or `--repo [DIR]`, at least one: a `check` with neither is a usage error (exit 2); `--envs` or `--repo [DIR]` (exclusive); filters `--language python`, `--ecosystem pypi\|github-actions` (each repeatable, combined) | not accepted (usage error) | yes |
+| `check` | `--path P` (repeatable) or `--repo [DIR]`, at least one: a `check` with neither is a usage error (exit 2); `--envs` or `--repo [DIR]` (exclusive); filters `--language python`, `--ecosystem pypi\|github-actions` (each repeatable; repeats of one flag add up, and the two flags together keep only what both allow) | not accepted (usage error) | yes |
 | `protect [pip\|uv] --path P` | `--path P` is required (repeatable): a `protect` without it is a usage error (exit 2) | yes | yes |
 | `install --venv PATH PACKAGE...` | `PACKAGE` is `NAME` or `NAME==VERSION` | yes | yes |
 | `pin OWNER/REPO[/PATH]@REF` | `REF` is required (a tag, a branch or a 40-hex SHA): a bare `OWNER/REPO` is exit 2 with nothing written (owner's approval of 2026-11-10, #151) | yes | yes |
@@ -62,8 +80,9 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
   filter leaves out is listed as skipped with reason `filtered` (out of scope). A scope and
   filters that leave no ecosystem at all are a usage error (exit 2), so a mistyped CI gate
   cannot pass with nothing checked.
-- What `check` and `protect` read or write is decided only by their arguments (owner's rulings of
-  2026-11-13, #255; plan §10.4). A `check` with neither `--path` nor `--repo`, and a `protect`
+- Where `check` and `protect` look for environments and workflows, and what they write, is decided
+  only by their arguments (owner's rulings of 2026-11-13, #255; plan §10.4). A `check` with
+  neither `--path` nor `--repo`, and a `protect`
   without `--path`, is a usage error (exit 2) whose message shows the `--path` form; it is decided
   from the arguments before anything is read, so it reads and writes nothing. Neither command has
   an `--all` option or a default scope, and no setting changes what a command reads (§10.2).
@@ -74,7 +93,8 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
   does not look for a repository, and `--repo DIR` never depends on the current folder. Owner's
   ruling of 2026-11-14 (#255), replacing the 2026-11-04 ruling (#68) for plain `check`, which no
   longer exists.
-- The repository check (`--repo`, and `check --path P` without `--envs` inside a repository) lists the files at the
+- The repository check (`--repo`, and `check --path P` without `--envs` inside a repository) lists
+  the files at the
   repository's top level that v1.1 reads (plan §3.3) as skipped with reason `later-release`
   (out of scope): `pyproject.toml`, `uv.lock` and `requirements*.txt` as `pypi`, and
   `.pre-commit-config.yaml` with no ecosystem. `--path` narrows that list as it narrows the
@@ -82,9 +102,11 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
 - `check --envs` and `protect` find Python environments only at or under each `--path` P, and
   nothing is looked for outside the named paths (#255): P itself when it is a venv or a base
   installation's `sys.prefix`; the base installations in the standard places under P, and those
-  reached through interpreters in `PATH` folders under P; and the venvs and base installations
-  found by walking P (every P but a venv), following symlinked folders under P,
-  following symlinked folders, at most 8 levels down (a venv 8 levels below P is found), and
+  reached through interpreters in `PATH` folders under P (a `PATH` folder that is a venv's own
+  `bin`, as activating the venv puts it there, names that venv: its base, the one `pyvenv.cfg`'s
+  `home` names, is a candidate only when it is itself under P, #301); and the venvs and base
+  installations found by walking P (every P but a venv), following symlinked folders under P,
+  at most 8 levels down (a venv 8 levels below P is found), and
   never into a venv or a folder named `.git`, `node_modules`, `__pycache__` or `site-packages`. A
   venv one level past the limit, or directly inside one of those folders, is listed as an
   in-scope skip `check-error` with its place (exit 2) unless a shorter route checks it; deeper
@@ -96,7 +118,8 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
   only when the file it really is (through a symlink) is inside the named paths; otherwise it is
   an in-scope skip `check-error` at its place. `protect uv` with no such path is an in-scope
   skip `check-error` at each P.
-- Every handler must report its area (per ecosystem, and for `check` and `protect` per `--path` value too, §3): for `check`, each in-scope ecosystem; for `install`,
+- Every handler must report its area (per ecosystem, and for `check` and `protect` per `--path`
+  value too, §3): for `check`, each in-scope ecosystem; for `install`,
   `protect`, `pin` and `acknowledge`, the verb's ecosystem. It reports an area with a checked
   entry or an in-scope skip; an out-of-scope skip does not count. An area it does not report
   is added as an in-scope skip `check-error` (exit 2), so a handler for one of these verbs that
@@ -121,7 +144,8 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
   (`--h` is not `--help`).
 - A writing command shows the change and writes only on confirmation (`cli.confirm`). `--yes`
   confirms in advance, except for `acknowledge` and `override add`. With no terminal there is no
-  confirmation. The writing commands follow D15 (#3, #5, #6, #9): a declined confirmation, or
+  confirmation. With no terminal the change is still shown, no question is asked, and nothing is
+  written (#284). The writing commands follow D15 (#3, #5, #6, #9): a declined confirmation, or
   none possible, writes nothing and exits 2, and the message says to add `--yes` where it is
   allowed; `--yes` still prints the change, to stderr, as a record (the command prints it;
   `cli.confirm` returns on `--yes` without printing); the question goes to stderr, so `--json`
@@ -144,7 +168,8 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
   written atomically); `install` says "written: …; removed: …". Everything written had passed
   its checks, and nothing is rolled back; a `pin` re-run finishes the change.
 - **A failed check never gives 0.** `Collector.check` turns any exception into an in-scope skip:
-  with the reason an `IncompleteCheckError` names, otherwise `check-error`. The CLI does the same for a handler that raises or that returns something
+  with the reason an `IncompleteCheckError` names, otherwise `check-error`. The CLI does the same
+  for a handler that raises or that returns something
   other than a result for its own verb; the skip appears in the normal output. Building the
   parser, rendering and writing (including the final flush) are guarded too; a failure there
   exits 2 with a fixed message on stderr (output already written may be partial). A closed or
@@ -161,7 +186,8 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
   check (exit 2). A check started for a malformed place is recorded as a
   `malformed-name` finding and an unfinished check before it runs.
 - **Every `--path` value is reported** (owner's ruling, 2026-11-03, #26; `protect` too since
-  #255). For `check` and `protect`, each `--path` value P must be reported by at least one in-scope ecosystem, through a checked entry
+  #255). For `check` and `protect`, each `--path` value P must be reported by at least one in-scope
+  ecosystem, through a checked entry
   or an in-scope skip whose place is P or inside P; `cli._with_coverage` adds an unreported P as
   an in-scope skip `check-error` with place P (exit 2), as it does for an unreported ecosystem.
   A handler that ignores one of several paths, or a P that matches nothing (a folder with no
@@ -202,7 +228,10 @@ ID; exit codes; JSON shape; command names; plug-in protocol.
 
 | In scope (exit 2) | Out of scope (exit unchanged) |
 |---|---|
-| `feed-failure`, `unknown-age`, `unsupported-yaml`, `rate-limit`, `default-branch-unreadable`, `check-error`, `not-available` | `filtered`, `default-scope`, `later-release`, `deeper-than-one-level`, `local-install` |
+| `feed-failure`, `unknown-age`, `unsupported-yaml`, `rate-limit`, `default-branch-unreadable`, `check-error`, `not-available` | `filtered`, `later-release`, `deeper-than-one-level`, `local-install` |
+
+`default-scope` was removed with the default scope (#255), after which no command could emit it
+(#282).
 
 **Other enums:** ecosystems `pypi`, `github-actions`; labels `actively-exploited`,
 `registry-quarantined`; option kinds `replace`, `protect`, `remove`, `exception`; override
@@ -211,12 +240,14 @@ categories `not-exploitable`, `no-fix-available`, `deferred-upgrade`, `accepted-
 `nested-moving-reference`.
 
 **Options.** `replace` names an item and version and, once eligible, a command; before that, an
-`eligible_on` date and no command. `protect` carries `ssc-guardian protect [pip|uv] --path PATH`, whose
+`eligible_on` date and no command. `protect` carries `ssc-guardian protect [pip|uv] --path PATH`,
+whose
 `PATH` is the finding's own place (#255). `remove`
 is the user's decision and has no command. `exception` goes to a person and has no command in
 JSON; text output names `ssc-guardian acknowledge OWNER/REPO` or `ssc-guardian override add`.
 A command can only be one of three shapes, built from grammar-checked values:
-`install --venv PATH NAME==VERSION`, `pin ACTION@REF`, `protect [pip|uv] --path PATH`. A `replace` command
+`install --venv PATH NAME==VERSION`, `pin ACTION@REF`, `protect [pip|uv] --path PATH`. A `replace`
+command
 installs or pins exactly the option's item and version, uses `install` for `pypi` and `pin` for
 `github-actions`. A `replace` option has exactly one of a command (once eligible) and an
 `eligible_on` date (before that). A `protect` option carries only the `protect` shape, naming its
@@ -647,8 +678,9 @@ overrides no reference for it).
      advisory is now KEV-listed, the override ends once `today > created + 7 days` (listed as
      expired). If KEV could not be reached, the override is **not applied** and the
      vulnerability counts (exit 1), with the reason printed on stderr.
-  3. For `known-vulnerability`: the "fixed version passes every rule and installs" check
-     finished and found none. If such a version exists, the override has ended (listed as
+  3. For `known-vulnerability`: the check for a fixed version that passes every rule and that
+     Guardian can install or pin now (installed or not) finished and found none. If such a version
+     exists, the override has ended (listed as
      expired); if the check could not finish, it is **not applied**.
 
   An override that is not applied is named with its reason in a stderr note,
@@ -700,7 +732,8 @@ overrides no reference for it).
 - Settings: stricter wins across the change's `.ssc-guardian.toml` and the default branch's
   copy (§10.3), with the built-in defaults beneath the default branch's own values (B1). A file
   absent from the default branch therefore contributes the built-in defaults: the first pull
-  request that adds `.ssc-guardian.toml` passes only if it tightens. Overrides and acknowledgments: the default branch's only; the change's copies
+  request that adds `.ssc-guardian.toml` passes only if it tightens. Overrides and acknowledgments:
+  the default branch's only; the change's copies
   are ignored, so a pull request cannot release its own finding.
 - `ci_context.py` takes the fetch function as an argument; it never imports the network client.
 
@@ -726,7 +759,8 @@ Rulings on the review of the first implementation (2026-11-03):
 - **B1 Built-ins as the floor in CI.** In CI the default branch's layer is the built-in
   defaults overlaid by its own file (or the built-in defaults alone when it has none), so a
   pull request can only tighten a setting. The floor covers the default scope too (every
-  ecosystem), and a value held only by the floor is never reported as weakened. Locally and on the default branch, Q4 holds as
+  ecosystem), and a value held only by the floor is never reported as weakened. Locally and on the
+  default branch, Q4 holds as
   written.
 - **N6 A repository's deny entry covers its sub-path Actions** (§10.2).
 - **N8 Renewal allowed.** Re-running `override add` with the same fields on a later day
@@ -735,7 +769,9 @@ Rulings on the review of the first implementation (2026-11-03):
 - **N-4 T3 thresholds follow the plan.** `young_repository_days` and `min_stars` can only be
   raised from their built-in values (90 and 50); a lower value makes the file malformed. The
   T5 limits can only be lowered (their ranges end at the built-in values). Q4's shortening
-  applies to a `[rules]` entry's cooldown only.
+  applies to a `[rules]` entry's cooldown only. When the exemption for Guardian's own repository
+  (#233) keeps that repository from blocking as young or little-used, one stderr note says so
+  (#284); exit codes, findings and JSON do not change.
 - **#42 One override per advisory** (2026-11-03, the issue's proposed option). An override
   names one advisory by any one of its IDs and releases that advisory, aliases included; two
   advisories still need two overrides (D14; §10.4).
@@ -789,6 +825,10 @@ Rulings on the review of the first implementation (2026-11-03):
     of this run` or `no project file in the folder names the distribution`. No in-scope skip
     reason is added. A `vcs_info` or `archive_info` install makes no claim and gets no note, and
     a distribution with no `direct_url.json` that PyPI does not know stays `unknown-age`.
+    An `unknown-age` skip for a distribution's release, from `check --envs` or `install --venv`,
+    names the distribution and version in its text-only detail, `<name> <version>` (normalized
+    name, canonical version), like the `local-install` row's detail; §5's JSON skip object
+    (`ecosystem`, `place`, `reason`, `in_scope`) is unchanged (#298).
   - **Why only the age.** `check --envs` audits files the distribution itself shipped. An index
     install can carry its own `direct_url.json` and the same editable-style `.pth` and finder
     layout a flat-layout editable install has, and once its code has run it can create the
@@ -808,9 +848,10 @@ frozen `AgeSource` and `InstallPlan.also_writes` (§7, D16) without changing the
 |---|---|---|---|
 | `.ssc-guardian.lock` | repository root (Git top level), committed | each pinned Action commit: its source tag, first-seen date and trusted date | `check --repo` (T4: is the pin listed; T2: when its cooldown starts), `pin` (before it rewrites the file) |
 
-- `pin` is the only writer (#9). It names the file in `InstallPlan.also_writes` (D16) and
-  rewrites it whole and atomically (`settings.atomic_write`), so comments are not kept and the
-  first line says so. `lockfile.py` only turns entries into text and text into entries.
+- `pin` is the only Guardian command that writes it (#9). It names the file in
+  `InstallPlan.also_writes` (D16) and rewrites it whole and atomically (`settings.atomic_write`),
+  so comments are not kept and the first line says so. `lockfile.py` only turns entries into text
+  and text into entries.
 - **In CI** the checked-out copy is read as is (FC-3), unlike overrides, which come from the
   default branch (§10.5), so lock-file changes need review (the CODEOWNERS pattern in
   `docs/authority-patterns.md`). Verifying again the entries a pull request adds is deferred

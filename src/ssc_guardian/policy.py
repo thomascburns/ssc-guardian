@@ -761,7 +761,11 @@ def evaluate_package(
             )
         )
     elif unknown:
-        raise IncompleteCheckError(SkipReason.UNKNOWN_AGE, site="policy.evaluate-package-unknown-age")
+        # The normalized name and the version as installed (grammar-checked by the caller) name
+        # the distribution, never file content (#298); ``1.0.0`` stays ``1.0.0``, as pip shows it (#284).
+        raise IncompleteCheckError(
+            SkipReason.UNKNOWN_AGE, detail=f"{name} {version}", site="policy.evaluate-package-unknown-age"
+        )
 
 
 def evaluate_packages(

@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Software Supply Chain Guardian for Python and GitHub Actions</title>
+<meta name="description" content="ssc-guardian is an open-source command-line tool that detects Indicators of Compromise in Python packages and GitHub Actions and blocks the serious ones.">
+<meta property="og:title" content="Software Supply Chain Guardian for Python and GitHub Actions">
+<meta property="og:description" content="ssc-guardian is an open-source command-line tool that detects Indicators of Compromise in Python packages and GitHub Actions and blocks the serious ones.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://thomascburns.github.io/ssc-guardian/">
+<!-- One self-contained page: inline styles and inline SVG, no scripts, and nothing loaded from
+     another host (the policy above blocks any such load). -->
+<style>
+/* Layout: one reading column (about 68ch) with wide bands for diagrams; an inspection-ledger feel:
+   ruled sections, an amber "hold" color for the cooldown and the notice band, real terminal output. */
+:root {
+  --paper: #f3f5f4;
+  --sheet: #ffffff;
+  --ink: #15201f;
+  --ink-2: #3c4a48;
+  --rule: #cdd6d3;
+  --accent: #0f5f63;
+  --hold: #9a5a00;
+  --hold-wash: #f6e7cf;
+  --term-bg: #10191a;
+  --term-fg: #d7e2df;
+  --term-dim: #84948f;
+  --viol: #b3261e;
+  --warn: #8a5800;
+  --note: #2459a6;
+  --ok: #1f7a43;
+  --f-display: "Avenir Next Condensed", "Helvetica Neue", Arial, sans-serif;
+  --f-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1514; --sheet: #151f1e; --ink: #e3ebe8; --ink-2: #a9b8b4; --rule: #2a3a38;
+    --accent: #5fc0c4; --hold: #e5a443; --hold-wash: #3a2c14;
+    --term-bg: #070c0c; --term-fg: #d7e2df; --term-dim: #7d8d89;
+    --viol: #ff8a80; --warn: #f0b85a; --note: #8fb6ff; --ok: #6fd39a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1514; --sheet: #151f1e; --ink: #e3ebe8; --ink-2: #a9b8b4; --rule: #2a3a38;
+  --accent: #5fc0c4; --hold: #e5a443; --hold-wash: #3a2c14;
+  --term-bg: #070c0c; --term-fg: #d7e2df; --term-dim: #7d8d89;
+  --viol: #ff8a80; --warn: #f0b85a; --note: #8fb6ff; --ok: #6fd39a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--f-body); font-size: 17px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+.wrap { max-width: 1040px; margin: 0 auto; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.12; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5.5vw, 3.6rem); font-weight: 800; font-stretch: 78%; letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.55rem, 3vw, 2.1rem); font-weight: 750; font-stretch: 82%; }
+h3 { font-size: 1.12rem; font-weight: 700; font-stretch: 90%; }
+p { margin: 0; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+.mast .name .mono { font-weight: 400; color: var(--ink-2); }
+.sub { color: var(--ink-2); font-size: 0.85rem; }
+.aside { font-size: 0.93rem; color: var(--ink-2); }
+.id-note { font-size: 0.9rem; color: var(--ink-2); }
+code, .mono { font-family: var(--f-mono); font-size: 0.88em; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+
+/* masthead and notice */
+.mast { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; justify-content: space-between;
+  padding-block: 22px 14px; border-bottom: 1px solid var(--rule); }
+.mast .name { font-family: var(--f-display); font-weight: 700; font-stretch: 85%; font-size: 1.05rem; }
+.mast .tag { font-family: var(--f-mono); font-size: 0.78rem; color: var(--ink-2); }
+.notice { margin-top: 18px; background: var(--hold-wash); border: 1px solid var(--hold); border-radius: 6px;
+  padding: 14px 18px; display: grid; gap: 4px; }
+.notice b { color: var(--hold); font-family: var(--f-display); font-stretch: 88%; font-size: 1.05rem; }
+.notice p { font-size: 0.95rem; color: var(--ink); max-width: 90ch; }
+
+/* hero */
+.intro { display: grid; gap: 16px; padding-block: 40px 4px; max-width: 74ch; }
+.intro h1 { font-size: clamp(2rem, 4.6vw, 3.2rem); }
+.intro .plain { font-size: 1.12rem; line-height: 1.65; color: var(--ink); }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 40px; align-items: center; padding-block: 40px 40px; }
+.hero .lede { display: grid; gap: 18px; }
+.hero .lede p { font-size: 1.1rem; color: var(--ink-2); max-width: 48ch; }
+.hero .lede p.zero { font-size: 1rem; color: var(--ink); border-left: 3px solid var(--accent); padding-left: 12px; }
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 6px; font-family: var(--f-mono);
+  font-size: 0.8rem; line-height: 1.55; padding: 18px 20px; overflow-x: auto; min-width: 0; }
+.term pre { margin: 0; white-space: pre; }
+.term .p { color: var(--term-dim); }
+.term .v { color: #ff8a80; font-weight: 500; }
+.term .n { color: #8fb6ff; }
+.term .x { color: #f0b85a; }
+.term .fix { color: #6fd39a; }
+/* Try it: prerequisites and numbered steps; one click selects a whole command (CSS only). */
+.prereq { display: grid; gap: 8px; }
+.prereq ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: 18px; }
+.steps > li { counter-increment: step; display: grid; gap: 8px; min-width: 0; }
+.steps h3::before { content: counter(step) ". "; color: var(--accent); font-family: var(--f-mono); }
+.steps p { font-size: 0.93rem; color: var(--ink-2); }
+.term.cmd pre { -webkit-user-select: all; user-select: all; }
+.term-cap { font-size: 0.8rem; color: var(--ink-2); margin-top: 8px; }
+
+/* sections */
+section { padding-block: 44px; border-top: 1px solid var(--rule); display: grid; gap: 22px; }
+section > header { display: grid; gap: 8px; }
+.lead { font-size: 1.06rem; color: var(--ink-2); }
+.prose { display: grid; gap: 14px; }
+
+/* five jobs */
+.jobs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.card .k { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+.card p { font-size: 0.92rem; color: var(--ink-2); }
+
+/* timeline */
+.figure { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; display: grid; gap: 12px; min-width: 0; margin: 0; }
+.figure .scroll { overflow-x: auto; }
+.figure figcaption { font-size: 0.88rem; color: var(--ink-2); }
+svg text { font-family: var(--f-body); }
+.t-axis { stroke: var(--ink-2); stroke-width: 1; }
+.t-tick { stroke: var(--rule); stroke-width: 1; }
+.t-label { fill: var(--ink-2); font-size: 12px; font-family: var(--f-mono); }
+.t-hold { fill: var(--hold-wash); stroke: var(--hold); stroke-width: 1.2; }
+.t-holdtext { fill: var(--hold); font-size: 14px; font-weight: 600; }
+.t-ink { fill: var(--ink); font-size: 13px; font-weight: 600; }
+.t-ink2 { fill: var(--ink-2); font-size: 12px; }
+.t-dot { fill: var(--ink); }
+.t-viol { fill: var(--viol); }
+.t-violtext { fill: var(--viol); font-size: 13px; font-weight: 600; }
+.t-ok { fill: var(--ok); }
+.t-line-v { stroke: var(--viol); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.t-line-ok { stroke: var(--ok); stroke-width: 1.5; }
+
+/* tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+tr:last-child td { border-bottom: none; }
+th { font-family: var(--f-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); background: var(--paper); }
+td code { white-space: nowrap; }
+td.req { min-width: 15em; }
+.pill { display: inline-block; font-family: var(--f-mono); font-size: 0.75rem; padding: 0 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.no { color: var(--ok); } .pill.yes { color: var(--hold); }
+.takeaway { font-family: var(--f-display); font-stretch: 88%; font-weight: 700; font-size: 1.15rem; }
+
+/* flow */
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.2fr); }
+.step { position: relative; background: var(--sheet); border: 1px solid var(--rule); padding: 16px; display: grid; gap: 6px; align-content: start; }
+.step + .step { border-left: none; }
+.step:first-child { border-radius: 6px 0 0 6px; }
+.step:last-child { border-radius: 0 6px 6px 0; }
+.step .n { font-family: var(--f-mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.08em; }
+.step p { font-size: 0.9rem; color: var(--ink-2); }
+.step:not(:last-child)::after { content: ""; position: absolute; right: -7px; top: 50%; width: 12px; height: 12px;
+  background: var(--sheet); border-top: 1px solid var(--rule); border-right: 1px solid var(--rule); transform: translateY(-50%) rotate(45deg); z-index: 1; }
+.exits { display: grid; gap: 8px; }
+.exit { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: baseline; font-size: 0.88rem; }
+.exit .c { font-family: var(--f-mono); font-weight: 500; font-size: 0.85rem; padding: 1px 8px; border-radius: 3px; border: 1px solid currentColor; }
+.c0 { color: var(--ok); } .c1 { color: var(--viol); } .c2 { color: var(--warn); }
+.notes3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.notes3 div { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; font-size: 0.93rem; color: var(--ink-2); }
+.notes3 b { color: var(--ink); font-weight: 600; }
+
+/* warning signs */
+.signs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.sign { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: grid; gap: 8px; align-content: start; }
+.sign ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.sign li { font-size: 0.9rem; color: var(--ink-2); }
+.sign li code { color: var(--ink); }
+.sign.planned { background: transparent; border-style: dashed; border-color: var(--hold); }
+.sign .k { color: var(--accent); }
+.sign.planned .k { color: var(--hold); }
+
+/* threats */
+.threats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.threat { border-top: 2px solid var(--ink); padding-top: 10px; display: grid; gap: 6px; align-content: start; }
+.threat p { font-size: 0.92rem; color: var(--ink-2); }
+
+/* chain */
+.chain { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.link { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.link .who { font-family: var(--f-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.link.you .who { color: var(--accent); }
+.link p { font-size: 0.88rem; color: var(--ink-2); }
+.link h3 { font-size: 1rem; }
+.link { position: relative; }
+.link:not(:last-child)::after { content: ""; position: absolute; right: -9px; top: 50%; width: 8px; height: 8px;
+  border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); transform: translate(-1px, -50%) rotate(45deg); }
+
+/* places */
+.places { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.place { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 18px; display: grid; gap: 10px; align-content: start; }
+.place ul, .two ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 0.93rem; display: grid; gap: 6px; }
+.place .cmd { font-family: var(--f-mono); font-size: 0.8rem; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 8px 10px; overflow-x: auto; white-space: nowrap; }
+
+/* agents and people */
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.two .card { padding: 20px; gap: 12px; }
+.two li b { color: var(--ink); font-weight: 600; }
+.strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--sheet); }
+.strip div { padding: 12px 14px; font-size: 0.88rem; color: var(--ink-2); display: grid; gap: 4px; }
+.strip div + div { border-left: 1px solid var(--rule); }
+
+/* json */
+.json-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.keys dl { margin: 0; display: grid; gap: 4px; }
+.keys dt { font-family: var(--f-mono); font-size: 0.82rem; color: var(--accent); }
+.keys dd { margin: 0 0 8px; font-size: 0.9rem; color: var(--ink-2); }
+
+/* limits */
+.limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; margin: 0; padding: 0; list-style: none; }
+.limits li { padding-left: 16px; position: relative; font-size: 0.95rem; color: var(--ink-2); }
+.limits li::before { content: ""; position: absolute; left: 0; top: 0.65em; width: 7px; height: 7px; border: 1.5px solid var(--hold); }
+.limits b { color: var(--ink); font-weight: 600; }
+
+.hosts { display: flex; flex-wrap: wrap; gap: 8px; }
+.hosts span { font-family: var(--f-mono); font-size: 0.82rem; border: 1px solid var(--rule); background: var(--sheet); padding: 4px 10px; border-radius: 4px; }
+
+.reuse { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; display: grid; gap: 12px; }
+.credit { font-family: var(--f-mono); font-size: 0.88rem; background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; }
+
+footer { border-top: 1px solid var(--rule); padding-top: 22px; display: grid; gap: 10px; font-size: 0.9rem; color: var(--ink-2); }
+.links { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+@media (max-width: 960px) { .jobs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 860px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding-block: 28px; }
+  .jobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .flow { grid-template-columns: minmax(0, 1fr); }
+  .step + .step { border-left: 1px solid var(--rule); border-top: none; }
+  .step:first-child { border-radius: 6px 6px 0 0; } .step:last-child { border-radius: 0 0 6px 6px; }
+  .step:not(:last-child)::after { right: auto; left: 24px; top: auto; bottom: -7px; transform: rotate(135deg); }
+  .chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .link:not(:last-child)::after { display: none; }
+  .places, .threats, .notes3, .signs, .two, .json-grid, .limits { grid-template-columns: minmax(0, 1fr); }
+  .strip { grid-template-columns: minmax(0, 1fr); }
+  .strip div + div { border-left: none; border-top: 1px solid var(--rule); }
+}
+@media (max-width: 480px) {
+  body { font-size: 16px; }
+  .jobs, .chain { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="mast">
+    <span class="name">Software Supply Chain Guardian <span class="mono">ssc-guardian</span></span>
+    <span class="tag">v1.0.1-reference · <a href="https://github.com/thomascburns/ssc-guardian/tree/v1.0.1-reference">source on GitHub</a></span>
+  </div>
+
+  <div class="notice" role="note">
+    <b>A reference implementation, not a production tool.</b>
+    <p>The author uses Guardian every day in his own development work, but he publishes it as a reference implementation: a worked example of these defences. Do not rely on it for production work. It comes with no support and no stability promise.</p>
+  </div>
+
+  <div class="intro">
+    <span class="eyebrow">For engineering leaders: a five-minute read</span>
+    <h1>Mitigate software supply chain attacks on your workstation and in GitHub Actions.</h1>
+    <p class="plain">Modern software is built upon thousands of open source projects. Programmers download these projects and every update to them. They often accept those updates without a second look. Attackers know this. They steal a project author's password, publish an update with harmful code hidden inside, and wait for it to spread. Guardian stands between the programmer and those updates. It looks for <a href="#signs">Indicators of Compromise</a> (signs that an attacker has taken over a project), such as malware reports about the project, a known security flaw, code that claims to come from a project but does not, and a version label that someone has moved to point at different code. Guardian reports every sign it finds, blocks the serious ones, and explains each decision in plain words. It also holds each new release for a cooldown, a waiting period you set, which gives security researchers time to find and report an attack.</p>
+  </div>
+
+  <div class="hero">
+    <div class="lede">
+      <p>Guardian protects a developer's Mac and the team's GitHub repositories from poisoned updates. It makes new Python packages and GitHub Actions wait out a holding period, the cooldown. It checks threat feeds and known vulnerabilities, pins Actions to verified commits, and explains every decision.</p>
+      <p class="zero"><b>Guardian runs entirely on your own machine.</b> It has no server, no account and no telemetry, and it sends nothing to its author. Its only network traffic is lookups to five public services, listed below under <a href="#trust">What Guardian runs and sends</a>. Each lookup names at most the packages and Actions being checked, and Guardian's own requests identify the client only as <code>ssc-guardian</code>. The one exception is <code>ssc-guardian install</code>, which installs packages with the standard pip. Guardian does not change pip: it pins pip to one release and checks pip's wheel against a SHA-256 written in Guardian's code. As it does for everyone, pip tells PyPI your Python version, operating-system version and processor type. A GitHub token is optional; if you give Guardian one, it goes only to GitHub.</p>
+      <p class="zero">Guardian has no dependencies. It uses only Python's standard library, so installing it pulls in no other package that could itself carry poison.</p>
+    </div>
+    <div>
+      <div class="term" role="img" aria-label="Terminal output of ssc-guardian check --repo reporting a moving-reference violation with a fix command">
+<pre><span class="p">$</span> ssc-guardian check --repo .
+ssc-guardian check: 1 violation, 0 warnings, 1 notice;
+  1 checked, 0 skipped in scope, 1 out of scope
+
+<span class="v">VIOLATION</span> moving-reference github-actions actions/checkout v4
+  place: ~/projects/app/.github/workflows/ci.yml
+  <span class="fix">fix: actions/checkout v4: ssc-guardian pin actions/checkout@v4</span>
+  id: 220ace1b1db715bbf2a7cb7e4767a0dd
+
+<span class="n">NOTICE</span> first-use-publisher github-actions actions/checkout
+  place: ~/projects/app
+<span class="p">…</span>
+ssc-guardian 1.0.0, <span class="x">exit 1</span>: at least one violation.</pre>
+      </div>
+      <p class="term-cap">Real output from Guardian 1.0.0, shortened where it shows “…”. A tag such as <code>v4</code> can move to other code, so Guardian reports it and prints the command that pins it.</p>
+    </div>
+  </div>
+
+  <section id="problem">
+    <header>
+      <span class="eyebrow">The problem</span>
+      <h2>Yesterday's trusted update can be hostile today.</h2>
+      <p class="lead col">Teams pull in new code automatically, and attackers use that habit.</p>
+    </header>
+    <div class="col prose">
+      <p>A build takes the newest package version on every install, and a CI run takes whatever commit an Action's tag names that day. An attacker who takes over one popular package or one tag runs his code in every project that pulls it in, before anyone has a chance to report it.</p>
+      <p>One example came in March 2025. The GitHub Action <a href="https://github.com/tj-actions/changed-files"><code>tj-actions/changed-files</code></a> (CVE-2025-30066: <a href="https://github.com/advisories/GHSA-mrrh-fwg8-r2c3">GitHub advisory</a>, <a href="https://nvd.nist.gov/vuln/detail/CVE-2025-30066">NIST record</a>) called <a href="https://github.com/reviewdog/action-setup"><code>reviewdog/action-setup@v1</code></a> by its tag (CVE-2025-30154: <a href="https://github.com/advisories/GHSA-qmg3-hpqr-gqvc">GitHub advisory</a>, <a href="https://nvd.nist.gov/vuln/detail/CVE-2025-30154">NIST record</a>). The attackers moved that tag, and their code ran inside every workflow that used tj-actions. Both flaws are in CISA's Known Exploited Vulnerabilities catalog (<a href="https://www.cisa.gov/news-events/alerts/2025/03/18/supply-chain-compromise-third-party-tj-actionschanged-files-cve-2025-30066-and-reviewdogaction">CISA's alert</a>).</p>
+    </div>
+  </section>
+
+  <section id="what">
+    <header>
+      <span class="eyebrow">What Guardian does</span>
+      <h2>Five jobs, one rule set, one report.</h2>
+      <p class="lead col">Each job closes one route a poisoned update can take.</p>
+    </header>
+    <div class="jobs">
+      <div class="card">
+        <span class="k">Cooldown</span>
+        <h3>Wait before trusting</h3>
+        <p>A new PyPI version or Action commit waits 21 days by default. The wait gives the security community time to find and report a bad release.</p>
+      </div>
+      <div class="card">
+        <span class="k">Threat feeds</span>
+        <h3>Check what is known</h3>
+        <p>Guardian reads malware reports from OSV, GitHub and PyPI's quarantine, and known flaws from reviewed advisories. It labels a flaw that CISA lists as exploited.</p>
+      </div>
+      <div class="card">
+        <span class="k">Pinning</span>
+        <h3>Verify every Action</h3>
+        <p>A pin names an Action by its 40-character commit ID (SHA). Guardian accepts a pin only when a lock file, the list of allowed pins, holds it and the commit traces to the publisher.</p>
+      </div>
+      <div class="card">
+        <span class="k">Explanation</span>
+        <h3>Say why, every time</h3>
+        <p>Each finding names the rule, the place, the evidence, and, where one exists, the command that fixes it. Guardian lists anything it could not check as skipped, never as clean.</p>
+      </div>
+      <div class="card">
+        <span class="k">Zero dependencies</span>
+        <h3>Add no risk</h3>
+        <p>A supply-chain tool must not become a supply-chain risk. Guardian imports nothing outside Python's standard library. For checked installs it uses the standard pip. Guardian does not change pip: it pins pip to one release and checks pip's wheel against a SHA-256 written in Guardian's code.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="cooldown">
+    <header>
+      <span class="eyebrow">How it works: 1</span>
+      <h2>The cooldown buys time for detection.</h2>
+      <p class="lead col">A new version waits before Guardian will install or pin it, and Guardian checks the threat feeds on every run, during the wait and after it.</p>
+    </header>
+    <figure class="figure" data-diagram="cooldown">
+      <div class="scroll">
+        <svg viewBox="0 0 900 230" width="100%" style="min-width:640px;display:block" role="img" aria-labelledby="tl-title">
+          <title id="tl-title">Timeline: Guardian holds a release uploaded on day 0 until day 21; a malware report during the hold blocks it as a compromise.</title>
+          <rect class="t-hold" x="60" y="70" width="567" height="56" rx="3"/>
+          <text class="t-holdtext" x="76" y="103">Held by Guardian: the cooldown, 21 days by default</text>
+          <line class="t-axis" x1="60" y1="150" x2="840" y2="150"/>
+          <line class="t-tick" x1="60" y1="60" x2="60" y2="156"/><text class="t-label" x="60" y="174" text-anchor="middle">day 0</text>
+          <line class="t-tick" x1="249" y1="146" x2="249" y2="156"/><text class="t-label" x="249" y="174" text-anchor="middle">7</text>
+          <line class="t-tick" x1="438" y1="146" x2="438" y2="156"/><text class="t-label" x="438" y="174" text-anchor="middle">14</text>
+          <line class="t-tick" x1="627" y1="60" x2="627" y2="156"/><text class="t-label" x="627" y="174" text-anchor="middle">21</text>
+          <line class="t-tick" x1="816" y1="146" x2="816" y2="156"/><text class="t-label" x="816" y="174" text-anchor="middle">28</text>
+          <circle class="t-dot" cx="60" cy="150" r="5"/>
+          <text class="t-ink" x="60" y="40">Release uploaded</text>
+          <text class="t-ink2" x="60" y="56">a PyPI version or an Action commit</text>
+          <line class="t-line-v" x1="303" y1="126" x2="303" y2="196"/>
+          <circle class="t-viol" cx="303" cy="150" r="5"/>
+          <text class="t-violtext" x="312" y="200">A malware report arrives during the hold</text>
+          <text class="t-ink2" x="312" y="217">Guardian blocks the version as a compromise, on any day</text>
+          <line class="t-line-ok" x1="627" y1="150" x2="627" y2="196"/>
+          <circle class="t-ok" cx="627" cy="150" r="5"/>
+          <text class="t-ink" x="636" y="40">Eligible</text>
+          <text class="t-ink2" x="636" y="56">installs and pins go ahead</text>
+          <text class="t-ink2" x="636" y="71">when every other check passes</text>
+        </svg>
+      </div>
+      <figcaption>The cooldown buys time for detection; it does not guarantee detection. Your settings set the wait per package or Action, and a PyPI version's wait counts from its first upload, or, for an installed package, from the newest file that could be the one installed. For Actions, a commit that a workflow already pins is a notice while it is inside its cooldown, not a failure. For a commit still inside its cooldown, <code>pin</code> records it in the lock file, leaves the workflows alone, and gives the date on which to run <code>pin</code> again.</figcaption>
+    </figure>
+  </section>
+
+  <section id="pins">
+    <header>
+      <span class="eyebrow">How it works: 2</span>
+      <h2>Exact pins and version ranges</h2>
+      <p class="lead col">Guardian answers one question: which version is safe to take today.</p>
+    </header>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>What you ask for</th><th>What Guardian does</th></tr></thead>
+        <tbody>
+          <tr><td class="req"><code>install --venv .venv NAME</code><br><span class="sub">a loose request</span></td><td>Guardian picks the newest version that passes every rule today (cooldown, malware and vulnerability feeds, deny list) and fits the virtual environment (venv). It tells pip to go no higher, checks every dependency pip resolves as one set, and installs exactly those files, each bound to the SHA-256 that PyPI publishes.</td></tr>
+          <tr><td class="req"><code>install --venv .venv NAME==VERSION</code><br><span class="sub">an exact pin</span></td><td>Guardian checks that version. If the version is too young, compromised, or vulnerable, Guardian refuses it, names the newest version that passes, and prints the command that installs it.</td></tr>
+          <tr><td class="req"><code>pip install "NAME&gt;=1.2"</code><br><span class="sub">a range, with plain pip</span></td><td><code>ssc-guardian protect</code> writes pip's own cooldown setting into the venv, so pip takes the newest version older than the cooldown; it writes uv's setting into uv's user config when a named path holds it. Plain pip still skips the malware and vulnerability checks; <code>install --venv</code> is the checked path.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col aside"><code>install</code> takes only <code>NAME</code> or <code>NAME==VERSION</code>. It refuses web addresses, local paths, editable installs, and requirement-file options before pip resolves anything. Guardian 1.0.1 does not yet check requirements and lock files (<code>pyproject.toml</code>, <code>requirements*.txt</code>, <code>uv.lock</code>); a later release adds them. <code>check --envs</code> checks what a venv actually holds, however it got there.</p>
+  </section>
+
+  <section id="check">
+    <header>
+      <span class="eyebrow">How it works: 3</span>
+      <h2>A check searches only the paths you name.</h2>
+      <p class="lead col">It has no default scope and no hidden settings, and it never calls “unknown” safe.</p>
+    </header>
+    <div class="flow" role="list" data-diagram="check-flow" aria-label="Diagram: how a check runs, from the paths you name to one exit code">
+      <div class="step" role="listitem"><span class="n">IN</span><h3>Paths you name</h3><p><code>--path</code> for Python environments, <code>--repo</code> for one repository's workflows.</p></div>
+      <div class="step" role="listitem"><span class="n">FIND</span><h3>Environments and workflows</h3><p>Venvs and Python installations at or under each path; the workflows and the Actions they reach.</p></div>
+      <div class="step" role="listitem"><span class="n">APPLY</span><h3>Every rule</h3><p>The cooldown, the malware and vulnerability feeds, the pins and lock file, your settings, and your deny list.</p></div>
+      <div class="step" role="listitem"><span class="n">REPORT</span><h3>Findings and skips</h3><p>Violations, warnings, and notices, with what Guardian checked, what it skipped, and why.</p></div>
+      <div class="step" role="listitem"><span class="n">EXIT</span><h3>One code for the gate</h3>
+        <div class="exits">
+          <div class="exit"><span class="c c0">0</span><span>Every rule met in what was checked.</span></div>
+          <div class="exit"><span class="c c1">1</span><span>At least one violation.</span></div>
+          <div class="exit"><span class="c c2">2</span><span>A check could not finish, or a usage error. Skipped is unknown, not safe.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="notes3">
+      <div><b>A failed check never gives 0.</b> A feed that does not answer, a rate limit, or an error inside a check counts as a skip, and the run exits 2.</div>
+      <div><b>1 wins over 2.</b> Once Guardian knows of a violation, the result is 1, and the report still lists the unfinished checks.</div>
+      <div><b>Warnings and notices never fail a run.</b> Each rule has one fixed level; an exception goes through a recorded override.</div>
+    </div>
+  </section>
+
+  <section id="signs">
+    <header>
+      <span class="eyebrow">Warning signs</span>
+      <h2>Indicators of Compromise Guardian detects</h2>
+      <p class="lead col">Each rule watches for one sign of a takeover, an impostor, or a known bad release.</p>
+    </header>
+    <div class="signs">
+      <div class="sign">
+        <span class="k eyebrow">Too new to trust</span>
+        <ul>
+          <li><code>cooldown</code>: a version younger than the waiting period.</li>
+          <li><code>young-repository</code>: an Action repository under 90 days old or under 50 stars. It blocks until a person accepts it.</li>
+          <li><code>first-use-publisher</code>: a publisher new to this repository, shown with its age, stars, and forks.</li>
+        </ul>
+      </div>
+      <div class="sign">
+        <span class="k eyebrow">Known bad</span>
+        <ul>
+          <li><code>compromise</code>: malware reports from OSV, GitHub, and PyPI's quarantine.</li>
+          <li><code>known-vulnerability</code>: reviewed advisories, labelled when CISA lists the flaw as exploited.</li>
+          <li><code>unreleased-pin-advisory</code> and <code>deny-list</code>.</li>
+        </ul>
+      </div>
+      <div class="sign">
+        <span class="k eyebrow">Not who it claims to be</span>
+        <ul>
+          <li><code>impostor-commit</code>: a commit that no publisher tag, branch, or default-branch history reaches, such as code pushed through a fork.</li>
+          <li><code>unpushed-commit</code>: a commit never seen on a publisher branch.</li>
+          <li><code>unverified-pin</code>: a pin missing from the lock file.</li>
+        </ul>
+      </div>
+      <div class="sign">
+        <span class="k eyebrow">Changed underneath you</span>
+        <ul>
+          <li><code>moving-reference</code> and <code>nested-moving-reference</code>: a tag or branch that can move to other code.</li>
+          <li><code>moved-release-tag</code>: a recorded release tag that now names another commit.</li>
+        </ul>
+      </div>
+      <div class="sign">
+        <span class="k eyebrow">Hidden or unverifiable</span>
+        <ul>
+          <li><code>unpinned-image</code>: a Docker image with no digest.</li>
+          <li><code>nesting-limit</code> and <code>nesting-loop</code>: Actions nested too deep or in a loop.</li>
+          <li><code>unprotected</code>: no cooldown, or a package index other than PyPI's.</li>
+        </ul>
+      </div>
+      <div class="sign planned">
+        <span class="k eyebrow">Planned for v1.1</span>
+        <ul>
+          <li><b>A young owner account:</b> an Action whose owner's GitHub account is new.</li>
+          <li><b>A lookalike name:</b> an Action named one typo, separator, or lookalike letter away from a well-known Action.</li>
+          <li><b>A new contributor:</b> a pinned commit written by an account new to that repository.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="actions">
+    <header>
+      <span class="eyebrow">How it works: 4</span>
+      <h2>Six GitHub Actions threats, one design.</h2>
+      <p class="lead col">A GitHub Action is a reusable step that a CI workflow runs. These six defences stop the attack described above, and attacks like it, in your own repository's workflows.</p>
+    </header>
+    <div class="threats">
+      <div class="threat"><h3>Moving tag</h3><p>Every reference must be a 40-character commit SHA. <code>check --repo</code> reports a tag or branch, and <code>pin</code> pins it.</p></div>
+      <div class="threat"><h3>Malicious release</h3><p>Every new commit has a cooldown. <code>pin</code> records a young commit in the lock file but leaves the workflows alone. Run <code>pin</code> again once the commit is eligible.</p></div>
+      <div class="threat"><h3>Wrong publisher</h3><p>An Action repository created under 90 days ago, or with under 50 stars, blocks until a person runs <code>acknowledge</code>.</p></div>
+      <div class="threat"><h3>Impostor commit</h3><p>Guardian accepts a commit only when a publisher tag, branch activity, or default-branch history reaches it.</p></div>
+      <div class="threat"><h3>Nested Action</h3><p>Guardian reads the references inside a pinned Action at its pinned commit and checks them the same way.</p></div>
+      <div class="threat"><h3>Known vulnerability</h3><p>Guardian checks every pin against GitHub's reviewed advisories on every run.</p></div>
+    </div>
+  </section>
+
+  <section id="verify">
+    <header>
+      <span class="eyebrow">How it works: 5</span>
+      <h2>You verify Guardian before you install it.</h2>
+      <p class="lead col">A security tool is itself a target, so Guardian holds its own release to the same standard. You verify one wheel with no dependencies, so what you verify is all of Guardian's code.</p>
+    </header>
+    <div class="chain" role="list" data-diagram="verify-before-install" aria-label="Diagram: from the release build to your verified, pinned install">
+      <div class="link" role="listitem"><span class="who">Release workflow</span><h3>Build</h3><p>The public repository's workflow builds the wheel with a hash-locked build tool and every Action pinned by SHA.</p></div>
+      <div class="link" role="listitem"><span class="who">GitHub and Sigstore</span><h3>Attest</h3><p>GitHub attaches an artifact attestation: keyless Sigstore signing, with no named key to steal.</p></div>
+      <div class="link" role="listitem"><span class="who">GitHub</span><h3>Freeze</h3><p>A published release is immutable: nobody can move its tag or replace its files.</p></div>
+      <div class="link you" role="listitem"><span class="who">You</span><h3>Verify</h3><p><code>gh attestation verify</code> checks the downloaded wheel against that attestation before anything runs.</p></div>
+      <div class="link you" role="listitem"><span class="who">Your gate and CI</span><h3>Pin</h3><p>A commit gate or CI job pins the wheel's SHA-256 and checks it on every run.</p></div>
+    </div>
+  </section>
+
+  <section id="where">
+    <header>
+      <span class="eyebrow">Where it runs</span>
+      <h2>On the developer workstation, at the commit, in CI.</h2>
+      <p class="lead col">The same rules apply in all three places.</p>
+    </header>
+    <div class="places" data-diagram="where-it-runs" aria-label="Diagram: the three places Guardian runs">
+      <div class="place">
+        <h3>A developer's Mac</h3>
+        <ul>
+          <li><code>check</code> examines the Python environments you name.</li>
+          <li><code>protect</code> writes the installers' own cooldown setting into pip's and uv's configuration files.</li>
+          <li><code>install --venv</code> checks everything pip would install, then installs exactly those files.</li>
+        </ul>
+        <div class="cmd">ssc-guardian check --envs --path ~/projects/app/.venv</div>
+      </div>
+      <div class="place">
+        <h3>A commit gate</h3>
+        <ul>
+          <li>Each repository pins its own Guardian version and wheel SHA-256.</li>
+          <li>Before every commit, the gate checks the hash, then the repository's workflows and lock file.</li>
+        </ul>
+        <div class="cmd">ssc-guardian check --repo .</div>
+      </div>
+      <div class="place">
+        <h3>CI</h3>
+        <ul>
+          <li>The same <code>check --repo</code> runs on Linux runners.</li>
+          <li>Only the default branch's overrides count, so a pull request cannot release its own finding.</li>
+        </ul>
+        <div class="cmd">ssc-guardian check --repo . --json</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="agents">
+    <header>
+      <span class="eyebrow">Agents and people</span>
+      <h2>Built for agents and for people.</h2>
+      <p class="lead col">One run gives the same findings two ways: JSON that a program can act on safely, and plain text that a person can act on quickly. Where a decision belongs to a person, Guardian keeps it there.</p>
+    </header>
+    <div class="two">
+      <div class="card">
+        <span class="k">For LLM agents</span>
+        <ul>
+          <li><b>A contract, not screen-scraping.</b> <code>--json</code> prints one object in a versioned format. Its keys are sorted and always present, so an agent never guesses at a missing field.</li>
+          <li><b>Exit code first.</b> Each of 0, 1, and 2 maps to one next step, and the output never reports an unfinished check as clean.</li>
+          <li><b>Fixes as exact argument lists.</b> A fix command is a list of arguments, passed one per argument and never joined into a shell string. It is always <code>install</code>, <code>pin</code>, or <code>protect</code>.</li>
+          <li><b>Clear hand-off flags.</b> <code>requires_person</code>, <code>requires_user_approval</code>, and <code>eligible_on</code> tell the agent when to stop and ask, or when to report a date and wait.</li>
+          <li><b>Output is data, never instructions.</b> Every value is a fixed name or matches a strict pattern, so a hostile package name cannot plant a prompt in the agent's context.</li>
+          <li><b>No hidden state.</b> A check searches only the paths its arguments name; no setting or saved state widens it.</li>
+          <li><b>Ready-made guidance.</b> Guardian's docs give an agent instructions page and, for Claude Code, a <code>CLAUDE.md</code> snippet, permission rules, and an optional hook. Together they steer an agent's package installs to Guardian.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="k">For people</span>
+        <ul>
+          <li><b>A readable report.</b> Each finding gives the rule, the place, the fix command where there is one, and a stable ID to track it.</li>
+          <li><b>Show before write.</b> Every command that changes something shows the change and asks first.</li>
+          <li><b>Exceptions belong to people.</b> <code>acknowledge</code> and <code>override add</code> never appear in JSON, refuse <code>--yes</code> and <code>--json</code>, and need a person at a terminal.</li>
+          <li><b>A second warning for the worst cases.</b> For confirmed malware or an exploited flaw, <code>override add</code> warns again and asks the person to type the advisory ID.</li>
+          <li><b>Context for judgment.</b> The first use of an Action's publisher shows the repository's age, stars, and forks.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="strip" aria-label="What an agent does on each exit code">
+      <div><span class="exit"><span class="c c0">0</span><span>Report the result, and read the skipped list anyway.</span></span></div>
+      <div><span class="exit"><span class="c c1">1</span><span>Run the finding's exact fix command, or hand the finding to a person.</span></span></div>
+      <div><span class="exit"><span class="c c2">2</span><span>Stop and report. Never retry in a loop; never call it a pass.</span></span></div>
+    </div>
+    <p class="col aside">The terminal requirement slows a program down; it does not lock it out. Your agent's permission settings and CI with protected branches are the real enforcement points, and Guardian's docs give a pattern for each.</p>
+  </section>
+
+  <section id="cli">
+    <header>
+      <span class="eyebrow">The CLI</span>
+      <h2>Six commands; checks never change anything.</h2>
+      <p class="lead col">Every command that writes shows the change first and asks.</p>
+    </header>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Command</th><th>What it does</th><th>Changes anything?</th></tr></thead>
+        <tbody>
+          <tr><td><code>check --envs --path &lt;path&gt;…</code></td><td>Checks the Python environments at or under each named path.</td><td><span class="pill no">No</span></td></tr>
+          <tr><td><code>check --repo [dir]</code></td><td>Checks one repository's GitHub Actions workflows: the form for commit gates and CI.</td><td><span class="pill no">No</span></td></tr>
+          <tr><td><code>check --path &lt;path&gt;…</code></td><td>Checks the environments at or under each named path and, inside a repository, the workflows under those paths.</td><td><span class="pill no">No</span></td></tr>
+          <tr><td><code>protect [pip|uv] --path &lt;path&gt;…</code></td><td>Writes the installers' own cooldown setting into every environment at or under the paths, and into uv's user config when a path holds it.</td><td><span class="pill yes">After you confirm</span></td></tr>
+          <tr><td><code>install --venv &lt;path&gt; &lt;packages&gt;</code></td><td>Checks everything pip would install, then installs exactly those files.</td><td><span class="pill yes">After every check passes and you confirm</span></td></tr>
+          <tr><td><code>pin &lt;owner/repo&gt;@&lt;ref&gt;</code></td><td>Verifies an Action version, records it in the lock file, then writes the pin.</td><td><span class="pill yes">After every check passes and you confirm</span></td></tr>
+          <tr><td><code>acknowledge &lt;owner/repo&gt;</code></td><td>Records a person's acceptance of a young or little-used Action repository.</td><td><span class="pill yes">After you confirm, at a terminal</span></td></tr>
+          <tr><td><code>override add</code></td><td>Writes one override entry, asking for each field.</td><td><span class="pill yes">After you confirm, at a terminal</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes3">
+      <div><b>Confirm in advance.</b> <code>--yes</code> confirms ahead of time for <code>install</code>, <code>protect</code>, and <code>pin</code>.</div>
+      <div><b>A person decides exceptions.</b> <code>acknowledge</code> and <code>override add</code> never accept <code>--yes</code>.</div>
+      <div><b>No remove command.</b> Removing a package stays your decision; Guardian offers it as an option and never does it.</div>
+    </div>
+  </section>
+
+  <section id="json">
+    <header>
+      <span class="eyebrow">The API</span>
+      <h2>JSON format 1.0 for programs</h2>
+      <p class="lead col">Add <code>--json</code> to <code>check</code>, <code>protect</code>, <code>install</code>, or <code>pin</code>. The output is one ASCII object with sorted keys; an empty value is <code>null</code> or <code>[]</code>, never missing. Text and JSON come from the same findings.</p>
+    </header>
+    <div class="json-grid">
+      <div class="keys">
+        <dl>
+          <dt>format_version, tool, command, exit_code</dt>
+          <dd>What ran, which version, and the same 0, 1, or 2 that the shell sees.</dd>
+          <dt>summary</dt>
+          <dd>Counts of violations, warnings, notices, checked items, and skips in and out of scope.</dd>
+          <dt>findings[]</dt>
+          <dd>Each with <code>id</code>, <code>rule</code>, <code>level</code>, <code>ecosystem</code>, <code>place</code>, <code>item</code>, <code>version</code>, <code>evidence</code>, <code>labels</code>, <code>options</code>, <code>malformed_field</code>, and <code>via</code>.</dd>
+          <dt>options[]</dt>
+          <dd>The ways out: <code>replace</code>, <code>protect</code>, <code>remove</code>, or <code>exception</code>, with a ready argument list where one applies.</dd>
+          <dt>checked[], skipped[], overrides</dt>
+          <dd>What Guardian examined, what it did not and why, and which overrides applied or expired.</dd>
+        </dl>
+        <p class="id-note">A finding's <code>id</code> stays the same from run to run: the first 32 hex characters of a SHA-256 over the finding's rule, place, ecosystem, item, version, and related fields. Tickets and dashboards can track it.</p>
+      </div>
+      <div class="term" aria-label="Excerpt of ssc-guardian JSON output">
+<pre>{
+  <span class="p">…</span>
+  "command": "check",
+  "exit_code": 1,
+  "findings": [
+    {
+      <span class="p">…</span>
+      "item": "actions/checkout",
+      "level": "violation",
+      "options": [
+        {
+          "command": ["ssc-guardian", "pin",
+                      "actions/checkout@v4"],
+          "kind": "replace",
+          <span class="p">…</span>
+        }
+      ],
+      "rule": "moving-reference",
+      "version": "v4",
+      <span class="p">…</span>
+    }
+  ],
+  "format_version": "1.0",
+  "summary": {
+    "checked": 1, "notices": 1,
+    "skipped_in_scope": 0,
+    "skipped_out_of_scope": 1,
+    "violations": 1, "warnings": 0
+  },
+  <span class="p">…</span>
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="trust">
+    <header>
+      <span class="eyebrow">What it runs and sends</span>
+      <h2>What Guardian runs and sends</h2>
+      <p class="lead col">Guardian keeps its own footprint small on purpose. It runs on your machine, has no server or telemetry, and sends only the lookups below.</p>
+    </header>
+    <div class="col prose">
+      <p>Guardian runs three programs and no others: its own interpreter; a venv's Python, only inside <code>install --venv</code> (locked down for the check, and in normal mode only after every check passes and you confirm); and <code>gh auth token</code>, only from Homebrew's fixed locations and never through <code>PATH</code>. It reads every other program it finds from disk and never runs it.</p>
+      <p>On the network, Guardian talks over HTTPS to five services and refuses any other address, a redirect included:</p>
+      <div class="hosts"><span>api.github.com</span><span>api.osv.dev</span><span>pypi.org</span><span>files.pythonhosted.org</span><span>www.cisa.gov</span></div>
+      <p>Every request is a GET except OSV's batch query. Your GitHub token goes only to <code>api.github.com</code> and never appears on screen, in a log, or in JSON.</p>
+    </div>
+  </section>
+
+  <section id="limits">
+    <header>
+      <h2>Known limitations</h2>
+      <p class="lead col">Read these before you rely on any result.</p>
+    </header>
+    <ul class="limits">
+      <li><b>A reference implementation.</b> Not for production; no support and no stability promise.</li>
+      <li><b>Runs natively only on macOS.</b> On Linux only <code>check --repo</code> is supported, as in the CI example.</li>
+      <li><b>Python and GitHub Actions only.</b> Homebrew, npm, and Cargo come later.</li>
+      <li><b>Only what you name.</b> Guardian does not search the Mac for venvs.</li>
+      <li><b>Full protection means installing packages through Guardian's command-line interface</b> (<code>ssc-guardian install --venv</code>). Some of Guardian's protections still hold when you run <code>pip</code> or <code>uv</code> directly: pip and uv obey the cooldown that <code>protect</code> sets, and <code>ssc-guardian check</code> still finds a bad package after it is installed.</li>
+      <li><b>Time, not certainty.</b> The cooldown buys time for detection; it does not guarantee detection.</li>
+      <li><b>No lock against you.</b> A program or agent that runs as you can edit your Guardian settings, override and lock files, and Guardian's own code; agent permissions and protected-branch CI enforce the rules.</li>
+      <li><b>CI believes the lock file as written.</b> The lock file (<code>.ssc-guardian.lock</code>) lists the Action versions Guardian has verified and the date each one's cooldown started. CI does not verify them again, so an edit to the file could approve an unverified Action or cut a cooldown short. Review every change to the lock file in a pull request.</li>
+      <li><b>What an Action brings with it is unchecked.</b> Guardian verifies the commit an Action is pinned to, but not three things the Action's code can bring along: the contents of a Docker image it starts, including any Python packages in it (Guardian checks only that an Action's image is pinned); anything it downloads while it runs; and the npm packages built into a JavaScript Action.</li>
+      <li><b>Coming in v1.1.</b> Guardian will detect three more Indicators of Compromise: an Action whose owner's GitHub account is new, an Action whose name is one typo or lookalike letter away from a well-known Action, and a pinned commit written by an account new to that repository. The same release adds a repository settings report, guided setup, pre-commit hooks, and checks of dependency files.</li>
+    </ul>
+  </section>
+
+  <section id="start">
+    <header>
+      <span class="eyebrow">Try it</span>
+      <h2>Download, verify, install.</h2>
+      <div class="lead col prereq">
+        <p>Before you start, you need:</p>
+        <ul>
+          <li>macOS</li>
+          <li>Python 3.11 or later (uv supplies it if your Mac has none)</li>
+          <li>uv</li>
+          <li><code>gh</code>, the GitHub command-line tool. Only step 2, verifying the release, needs it signed in (<code>gh auth login</code>). Downloading works without signing in. Guardian also uses the sign-in, if present, for GitHub's higher request limit.</li>
+        </ul>
+        <p>Install Guardian in its own environment, never in a project's venv.</p>
+      </div>
+    </header>
+    <ol class="steps">
+      <li>
+        <h3>Download the release.</h3>
+        <div class="term cmd"><pre>gh release download v1.0.1-reference -R thomascburns/ssc-guardian -p 'ssc_guardian-*.whl'</pre></div>
+      </li>
+      <li>
+        <h3>Verify it before anything runs.</h3>
+        <p>Stop here if this step fails.</p>
+        <div class="term cmd"><pre>gh attestation verify ssc_guardian-1.0.1-py3-none-any.whl -R thomascburns/ssc-guardian \
+  --signer-workflow thomascburns/ssc-guardian/.github/workflows/release.yml \
+  --source-ref refs/tags/v1.0.1-reference</pre></div>
+      </li>
+      <li>
+        <h3>Install it in its own environment.</h3>
+        <div class="term cmd"><pre>uv tool install ./ssc_guardian-1.0.1-py3-none-any.whl</pre></div>
+      </li>
+      <li>
+        <h3>Check a project.</h3>
+        <p>Run this inside a project that has a <code>.venv</code> folder.</p>
+        <div class="term cmd"><pre>ssc-guardian check --envs --path .venv</pre></div>
+      </li>
+    </ol>
+  </section>
+
+  <section id="reuse">
+    <header>
+      <span class="eyebrow">Reuse</span>
+      <h2>Copy and reuse any part of it.</h2>
+      <p class="lead col">Guardian is open source under the Apache License 2.0.</p>
+    </header>
+    <div class="reuse">
+      <p class="col">You are welcome to copy, change, and reuse any part of this repository: the code, the tests, the docs, or the designs, in open or commercial work. If you do, please give credit as the license asks. Keep the copyright and license notices in the files you take, include the license and the NOTICE file, and mark the files you changed.</p>
+      <div class="credit">Credit line: Thomas C. Burns and Software Supply Chain Guardian</div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="links">
+      <a href="https://github.com/thomascburns/ssc-guardian">Repository</a>
+      <a href="https://github.com/thomascburns/ssc-guardian/blob/main/README.md">README</a>
+      <a href="https://github.com/thomascburns/ssc-guardian/blob/main/SECURITY.md">Security and verification</a>
+      <a href="https://github.com/thomascburns/ssc-guardian/blob/main/docs/reference.md">Reference</a>
+      <a href="https://github.com/thomascburns/ssc-guardian/blob/main/docs/contracts.md">Design contracts</a>
+      <a href="https://github.com/thomascburns/ssc-guardian/blob/main/docs/changelog.md">Changelog</a>
+    </div>
+    <p>Copyright 2026 Thomas C. Burns. Licensed under the Apache License 2.0; you may reuse any part of it with credit. Credit line: Thomas C. Burns and Software Supply Chain Guardian.</p>
+  </footer>
+
+</div>
+
+</body>
+</html>

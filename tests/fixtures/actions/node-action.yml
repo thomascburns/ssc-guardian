@@ -1,0 +1,10 @@
+# id: node-action
+# Faithful: the shape of a published JavaScript Action's action.yml: runs.using and runs.main, with
+#   no steps, so it names no inner reference and T5 stops here.
+# Modelled: the Action itself, which is made up and stands for any leaf; the fixture GitHub of
+#   tests/unit/test_nested_and_advisories.py serves this file, never the network.
+name: Node example
+description: Runs its own code and calls no other Action.
+runs:
+  using: node20
+  main: dist/index.js

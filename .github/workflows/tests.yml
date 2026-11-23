@@ -1,0 +1,79 @@
+# Copyright 2026 Thomas C. Burns
+# SPDX-License-Identifier: Apache-2.0
+#
+# Tests: the test suite, and Guardian's own check of this repository.
+#
+# - tests-linux: every push and pull request, and when started by hand, once on each
+#   Python version pyproject.toml's classifiers name (3.11, 3.12 and 3.13), and a
+#   failure on one version does not cancel the others. After the tests it runs
+#   `check --repo .`, so Guardian checks this repository's workflows and lock file
+#   on every push.
+# - tests-macos: in the public repository on every push and pull request; in any
+#   other copy only when started by hand, since macOS minutes on a private
+#   repository cost about 10x the Linux rate.
+#
+# Both jobs run the commands CONTRIBUTING.md gives: a virtual environment, the
+# hash-locked requirements-test.txt, then pytest. Every Action is pinned to a
+# 40-hex commit SHA with its tag as a comment, and .ssc-guardian.lock records it.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the hash-locked test requirements
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes --no-deps -r requirements-test.txt
+      - name: Test
+        env:
+          SSC_GUARDIAN_REQUIRE_NETWORK: "1"
+        run: .venv/bin/python -m pytest
+      - name: Check this repository with Guardian
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: src
+        run: .venv/bin/python -m ssc_guardian check --repo .
+
+  tests-macos:
+    if: github.repository == 'thomascburns/ssc-guardian' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install the hash-locked test requirements
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes --no-deps -r requirements-test.txt
+      - name: Test
+        env:
+          SSC_GUARDIAN_REQUIRE_NETWORK: "1"
+        run: .venv/bin/python -m pytest

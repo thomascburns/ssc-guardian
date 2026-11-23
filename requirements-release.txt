@@ -1,7 +1,7 @@
 # Copyright 2026 Thomas C. Burns
 # SPDX-License-Identifier: Apache-2.0
 #
-# The release workflow's build tool (plan §5 "Release workflow"), hash-locked.
+# The release workflow's build tool, hash-locked.
 # .github/workflows/release.yml installs it with
 #   pip install --require-hashes --no-deps -r requirements-release.txt
 # and builds with `python -m build --wheel --no-isolation`, so setuptools, the

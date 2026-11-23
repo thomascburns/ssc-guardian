@@ -1,8 +1,9 @@
 # Authority patterns: who may weaken a rule
 
-Plan §2.4 (R2-K3) and contracts §10. This page gives the two patterns the owner's repositories
-adopt and the README builds on: a Claude Code permission pattern and a CODEOWNERS pattern. It
-also says plainly what they do not do.
+This page gives two patterns for a repository that adopts Guardian, which the README builds on:
+a Claude Code permission pattern and a CODEOWNERS pattern. It also says plainly what they do not
+do. The settings and override files they protect are described in
+[reference.md](reference.md#settings-files).
 
 ## What Guardian itself enforces
 
@@ -32,8 +33,8 @@ Guardian stops an agent from weakening a rule **through Guardian's own commands*
 - The workstation files (`~/.config/ssc-guardian/`: `config.toml` is read by `check`
   (`check --repo` in CI included), `protect`, `install`, `pin` and `acknowledge`;
   `overrides.toml` by `check --envs`, `protect` and `install`) have no such rule: in CI, code
-  the pull request controls (an install step, the tests) runs as the same user and can write them. Run Guardian in CI before any such code
-  runs, or in a separate job.
+  the pull request controls (an install step, the tests) runs as the same user and can write
+  them. Run Guardian in CI before any such code runs, or in a separate job.
 
 ## The honest limit
 
@@ -126,8 +127,9 @@ protection (or a ruleset) on the default branch that:
 
 The workflow that runs the check needs only `contents: read`. With these settings, a change to
 an override, a setting or the lock file reaches the default branch only after a code owner has
-approved it, and CI judges every pull request by the default branch's settings (never below
-the built-in defaults) and its overrides, never the pull request's own.
+approved it. CI counts only the default branch's overrides, never the pull request's own. The
+default branch's settings, with the built-in defaults beneath them, are a floor: a pull request's
+settings can tighten them but never relax them.
 
 **Lock-file changes need a careful review.** CI trusts the committed lock file as it is: an
 entry added there is an allowed pin, and its `trusted` date sets when that commit's cooldown

@@ -157,7 +157,6 @@ class SkipReason(StrEnum):
     NOT_AVAILABLE = "not-available"
     # Out of scope: listed, never counted as clean, exit code unchanged.
     FILTERED = "filtered"
-    DEFAULT_SCOPE = "default-scope"
     LATER_RELEASE = "later-release"
     DEEPER_THAN_ONE_LEVEL = "deeper-than-one-level"
     LOCAL_INSTALL = "local-install"
@@ -170,7 +169,6 @@ class SkipReason(StrEnum):
 _OUT_OF_SCOPE = frozenset(
     {
         SkipReason.FILTERED,
-        SkipReason.DEFAULT_SCOPE,
         SkipReason.LATER_RELEASE,
         SkipReason.DEEPER_THAN_ONE_LEVEL,
         SkipReason.LOCAL_INSTALL,
@@ -893,13 +891,19 @@ class IncompleteCheckError(Exception):
     """Raised by a check that cannot finish. Only in-scope reasons are allowed, so a
     failure can never be reported as an out-of-scope skip (which would keep exit 0).
 
-    ``site`` names the refusal for its negative test (issue #117) and goes into no output."""
+    ``site`` names the refusal for its negative test (issue #117) and goes into no output.
 
-    def __init__(self, reason: SkipReason, *, site: str | None = None) -> None:
+    ``detail`` is the in-scope skip's text-only detail (for example ``<name> <version>`` for an
+    unknown age, issue #298), kept as ``skip_detail``; it never changes the message, which stays
+    the reason's value. A subclass's own ``detail`` (``UnsupportedYamlError`` keeps what it found
+    in the file) is never read into a skip."""
+
+    def __init__(self, reason: SkipReason, *, detail: str | None = None, site: str | None = None) -> None:
         if not reason.in_scope:
             raise ValueError(f"{reason} is an out-of-scope reason; a failed check is in scope")
         super().__init__(reason.value)
         self.reason = reason
+        self.skip_detail = detail
         if site is not None:
             record_site(site, self)
         else:
@@ -928,6 +932,18 @@ def _reason_of(exc: IncompleteCheckError) -> object:
         raise
     except BaseException:
         return None
+
+
+def _detail_of(exc: IncompleteCheckError) -> str | None:
+    """The error's skip detail when it is a string, else None, read like :func:`_reason_of`: a
+    subclass that never set it, or a property that raises, leaves the skip without one."""
+    try:
+        detail = exc.skip_detail
+    except KeyboardInterrupt:
+        raise
+    except BaseException:
+        return None
+    return detail if isinstance(detail, str) else None
 
 
 @dataclass
@@ -983,7 +999,8 @@ class Collector:
             # a subclass), and an out-of-scope reason would turn a failed check into exit 0.
             reason = _reason_of(exc)
             if isinstance(reason, SkipReason) and reason.in_scope:
-                self._skip(Skip(ecosystem, place, reason, site="findings.incomplete-check"))
+                detail = _detail_of(exc)
+                self._skip(Skip(ecosystem, place, reason, detail=detail, site="findings.incomplete-check"))
             else:
                 self._skip(
                     Skip(

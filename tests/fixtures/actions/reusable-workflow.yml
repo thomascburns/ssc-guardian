@@ -1,0 +1,12 @@
+# id: reusable-workflow
+# Faithful: the shape of a reusable workflow: a workflow_call trigger and a job whose steps call
+#   Actions, read at the commit the caller pins, as a composite Action's steps are.
+# Modelled: the workflow and its inner Action, someone/inner, which are made up; the fixture GitHub
+#   of tests/unit/test_nested_and_advisories.py serves this file, never the network.
+on:
+  workflow_call:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: someone/inner@v2

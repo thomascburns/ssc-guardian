@@ -1,0 +1,35 @@
+# Copyright 2026 Thomas C. Burns
+# SPDX-License-Identifier: Apache-2.0
+#
+# Issue form for a question about Guardian, or an idea for it.
+
+name: Question or idea
+description: A question about how Guardian works or how to use it, or an idea for it.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you post, remove anything private: tokens, private repository names, paths and
+        package names you do not want to publish.
+
+        Do not report a suspected vulnerability here. Report it privately, as
+        [SECURITY.md](https://github.com/thomascburns/ssc-guardian/blob/main/SECURITY.md) describes.
+
+        For a bug or a wrong verdict, use the bug form instead. A reply is not guaranteed.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question or idea
+      description: What you want to know, or what you would like Guardian to do, and why.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `ssc-guardian --version`, if you have Guardian installed.
+    validations:
+      required: false

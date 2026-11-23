@@ -232,7 +232,6 @@ _SKIP_TEXT = {
     SkipReason.CHECK_ERROR: "the check failed",
     SkipReason.NOT_AVAILABLE: "this check is not available in this build",
     SkipReason.FILTERED: "excluded by the scope or a filter",
-    SkipReason.DEFAULT_SCOPE: "outside the default scope",
     SkipReason.LATER_RELEASE: "not covered until a later release",
     SkipReason.DEEPER_THAN_ONE_LEVEL: "not checked: deeper than one level",
     SkipReason.LOCAL_INSTALL: "installed from a local folder; the upload age was not checked",
@@ -318,10 +317,18 @@ def _override_text(record: OverrideRecord) -> list[str]:
     return lines
 
 
+def _count(n: int, noun: str) -> str:
+    """``1 violation``, ``0 violations``, ``2 violations``: the singular only for exactly one (#303)."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
 def to_text(result: Result, tool: ToolInfo, *, color: bool = False) -> str:
     s = result.summary
+    counts = ", ".join(
+        _count(n, noun) for n, noun in ((s.violations, "violation"), (s.warnings, "warning"), (s.notices, "notice"))
+    )
     lines = [
-        f"{TOOL_NAME} {result.command.value}: {s.violations} violations, {s.warnings} warnings, {s.notices} notices; "
+        f"{TOOL_NAME} {result.command.value}: {counts}; "
         f"{s.checked} checked, {s.skipped_in_scope} skipped in scope, {s.skipped_out_of_scope} out of scope"
     ]
     for finding in result.findings:

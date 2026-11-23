@@ -1,0 +1,16 @@
+# id: reference-case-2025
+# The March 2025 reference case (plan §3.2): tj-actions/changed-files (CVE-2025-30066,
+#   GHSA-mrrh-fwg8-r2c3) and reviewdog/action-setup (CVE-2025-30154, GHSA-qmg3-hpqr-gqvc).
+# Faithful: the two names and the inner reference: reviewdog/action-setup@v1, by the tag the
+#   attackers moved.
+# Modelled: the outer Action. This composite calls reviewdog/action-setup@v1 from its own steps so
+#   that a consumer's check reaches the tag. The real hop ran in tj-actions' own CI workflow, in the
+#   publisher's repository, and T5 does not read a publisher's CI: it reads what a consumer's
+#   workflow calls. Guardian does not see that hop. The plan states the limit (#112), #111 tracks
+#   the fix for a future release, and no product code here stands in for it.
+name: Reference case 2025 outer Action
+description: Stands for tj-actions/changed-files calling reviewdog/action-setup by tag.
+runs:
+  using: composite
+  steps:
+    - uses: reviewdog/action-setup@v1

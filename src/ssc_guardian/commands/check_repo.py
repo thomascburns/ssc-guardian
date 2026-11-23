@@ -17,8 +17,10 @@
 §3.2; contracts §10.1, §10.4, §10.5).
 
 ``check --repo [DIR]`` checks DIR, which must be a Git top level (anything else is unfinished,
-exit 2, so a mistyped CI gate never passes); plain ``check`` and ``check --ecosystem github-actions``
-check the repository the current folder is in (outside one, see :mod:`.check_envs`). Every
+exit 2, so a mistyped CI gate never passes); ``check --path PATH`` and
+``check --ecosystem github-actions --path PATH`` check the repository the current folder is in
+(outside one, see :mod:`.check_envs`); ``check`` with neither ``--path`` nor ``--repo`` is
+refused before anything is read (#255). Every
 workflow in ``.github/workflows`` and every local Action it uses is read (never run), with the
 repository's settings, overrides and lock file and the workstation's ``config.toml``; in CI the
 default branch's settings, overrides and acknowledgments (§10.5). The dependency files at the
@@ -189,6 +191,16 @@ def _reason(exc: Exception) -> SkipReason:
     in-scope one, else ``check-error``, so a refused file is never an out-of-scope skip."""
     reason = getattr(exc, "reason", None) if isinstance(exc, IncompleteCheckError) else None
     return reason if isinstance(reason, SkipReason) and reason.in_scope else SkipReason.CHECK_ERROR
+
+
+def _see(places: Sequence[str | None]) -> str:
+    """The repository skip's detail when a file's own skip says why (#284): where to look, never
+    a bare "the check failed". A place outside the path grammar is None and is never echoed."""
+    named = [p for p in places if p is not None]
+    if not named:
+        return "see each file listed"
+    shown = f"see {', '.join(named)}"
+    return shown if len(named) == len(places) else f"{shown} and each file listed"
 
 
 def _unread_detail(exc: Exception) -> str:
@@ -380,7 +392,9 @@ class Run:
                 SkipReason.CHECK_ERROR, site="check_repo.step-check-error"
             )
         except IncompleteCheckError as exc:
-            self.notes.append(f"{self.root}: {exc}")
+            note = f"{self.root}: {exc}"
+            if note not in self.notes:  # one stop, such as GitHub's rate limit, ends many steps (#284)
+                self.notes.append(note)
             self.failure = self.failure or exc
 
     def entry(self, action: str, sha: str) -> LockEntry | None:
@@ -455,11 +469,15 @@ class CheckRepo:
                     self._check(root, paths, collector, notes)
                 except ConfigFileError as exc:
                     # A malformed settings or lock file: the skip names the file (contracts
-                    # §10.1, §11.3) and nothing in it applies; the check stops, unfinished. A
-                    # malformed overrides file never comes here: it is listed and the check goes on.
-                    collector.skipped.append(exc.skip(GHA))
+                    # §10.1, §11.3) and nothing in it applies; the check stops, unfinished, and the
+                    # repository's own skip points at the file (#284). A malformed overrides file
+                    # never comes here: it is listed and the check goes on.
+                    skip = exc.skip(GHA)
+                    collector.skipped.append(skip)
                     notes.append(str(exc))
-                    raise
+                    raise IncompleteCheckError(
+                        SkipReason.CHECK_ERROR, detail=_see([skip.place]), site="check_repo.file-unusable"
+                    ) from exc
                 except IncompleteCheckError as exc:
                     notes.append(f"{root}: {exc}")
                     raise
@@ -495,7 +513,9 @@ class CheckRepo:
         failed, listed = self._unread(reading.unread, chosen, collector, notes)
         if listed:  # kept for the end: every other file is still checked, and a finding wins
             notes.append(f"{root}: a file was not read; each is listed as skipped")
-            run.failure = IncompleteCheckError(SkipReason.CHECK_ERROR, site="check_repo.files-not-all-read")
+            run.failure = IncompleteCheckError(
+                SkipReason.CHECK_ERROR, detail=_see(listed), site="check_repo.files-not-all-read"
+            )
         references = [r for s in kept for r in s.references]
         unread = unread_local_actions(root, references, refused=refused)
         collector.skipped += [
@@ -552,11 +572,11 @@ class CheckRepo:
     @staticmethod
     def _unread(
         unread: Sequence[Unread], chosen: AbstractSet[str], collector: Collector, notes: list[str]
-    ) -> tuple[frozenset[str], bool]:
+    ) -> tuple[frozenset[str], list[str | None]]:
         """List each file, or local Action used in a file, that could not be read: in scope when
         the file is selected (exit 2; a finding elsewhere still wins), else ``filtered``. Returns
-        the selected files not read, whose references then count as listed, and whether any
-        in-scope skip was added."""
+        the selected files not read, whose references then count as listed, and the places of
+        the in-scope skips added (None for one outside the path grammar)."""
         failed: set[str] = set()
         skips: dict[Skip, None] = {}
         for item in unread:
@@ -588,7 +608,7 @@ class CheckRepo:
                 )
             skips[skip] = None
         collector.skipped += list(skips)
-        return frozenset(failed), any(s.in_scope for s in skips)
+        return frozenset(failed), list(dict.fromkeys(s.place for s in skips if s.in_scope))
 
     # --- T2 -------------------------------------------------------------------------
 
@@ -653,8 +673,19 @@ def _publishers(outer: Sequence[advisories.Pin], walk: nested.Walk, commits: nes
             assessment = publisher.assess(commits.repository(action), today=run.today, settings=run.settings)
             run.found += publisher.findings(assessment, place=run.root, first_use=first_use)
             run.notes += publisher.describe(assessment, first_use=first_use)
+            run.notes += _exemption_note(assessment)
 
         run.step(one)
+
+
+def _exemption_note(assessment: publisher.Assessment) -> list[str]:
+    """The stderr note that says the own-repository exemption decided it (#284): only when the
+    young or little-used repository rule would otherwise block. Findings and JSON do not change."""
+    would_block = (assessment.young or assessment.little_used) and not assessment.acknowledged
+    if not (would_block and assessment.exempt):
+        return []
+    name = assessment.repository.name
+    return [f"{name}: exempt from the young or little-used repository rule (Guardian's own repository)"]
 
 
 # --- T6 -----------------------------------------------------------------------------

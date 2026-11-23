@@ -33,7 +33,11 @@ folder is off):
   tolerance (a third of the cooldown, rounded up, at least a day; ``fixed_date_tolerance_days``
   can only lower it) fails until ``protect`` refreshes it.
 - pip 25.3 and older: no such option; the key is silently ignored (fact 1). Nothing is
-  written; the installation fails with "upgrade pip or exclude this installation".
+  written; the installation fails with "upgrade pip or leave this installation out of the
+  paths you name", or, on a Python older than 3.10, which no current pip that honours the
+  setting runs on, with "recreate this venv with Python 3.10 or later" (a base installation:
+  "use a Python 3.10 or later for this work"), "or leave this installation out of the paths
+  you name".
 
 **What pip reads** (fact 4, pip ``configuration.py``): global files, then the per-user files
 (skipped when ``PIP_CONFIG_FILE`` names a file that exists), then ``sys.prefix/pip.conf``,
@@ -401,10 +405,31 @@ class Assessment:
         return self.verdict in (Verdict.PROTECTED, Verdict.NO_PIP)
 
 
+_CURRENT_PIP_PYTHON = (3, 10)  # the oldest Python a pip that is current and honours the setting runs on
+
+
+def _old_pip_why(env: Environment, loaded: Pip) -> str:
+    """Why a pip that ignores the setting (or whose version cannot be read) fails, with the remedy
+    that works on ``env``'s Python. Below 3.10 no current pip honours the setting (pip 26.0.x is
+    the last for 3.9), so "upgrade pip" would lead nowhere: a venv is recreated, a base
+    installation is replaced for this work, or either is left out of the paths named (#302)."""
+    ignores = f"pip {loaded.version} ignores the cooldown setting"
+    if env.python >= _CURRENT_PIP_PYTHON:
+        return f"{ignores}: upgrade pip or leave this installation out of the paths you name"
+    major, minor = env.python
+    remedy = (
+        "recreate this venv with Python 3.10 or later, or leave this installation out of the paths you name"
+        if env.is_venv
+        else "use a Python 3.10 or later for this work, or leave this installation out of the paths you name"
+    )
+    return f"{ignores}, and Python {major}.{minor} cannot run a pip that both honours it and is current: {remedy}"
+
+
 def assess(env: Environment, *, cooldown_days: int, tolerance: int, today: date, sources: Sources) -> Assessment:
     """Check ``env``'s own pip cooldown against the settings: missing, weaker, stale or
     overridden fails with "run protect again"; a pip that ignores the setting fails with
-    "upgrade pip or exclude this installation".
+    "upgrade pip or leave this installation out of the paths you name" on Python 3.10 or
+    later, and below that with the remedy that works there (:func:`_old_pip_why`).
 
     The form is the one every pip in the search order accepts: a pip 26.0.x behind a newer
     one still runs whenever the per-user folder is off (``-s``, ``-I``), and it stops on
@@ -417,8 +442,7 @@ def assess(env: Environment, *, cooldown_days: int, tolerance: int, today: date,
     version = try_parse(loaded.version)
     form = form_for(version) if version is not None else None
     if form is None:
-        why = f"pip {loaded.version} ignores the cooldown setting: upgrade pip or exclude this installation"
-        return Assessment(env, Verdict.OLD_PIP, why, loaded, hidden)
+        return Assessment(env, Verdict.OLD_PIP, _old_pip_why(env, loaded), loaded, hidden)
     # A pip whose version cannot be read might reject P<n>D, so it gets the fixed form too.
     if any((v := try_parse(p.version)) is None or form_for(v) is Form.FIXED for p in found):
         form = Form.FIXED

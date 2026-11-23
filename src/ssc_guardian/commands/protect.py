@@ -50,7 +50,9 @@ from ssc_guardian.findings import (
     Ecosystem,
     FindingField,
     Installer,
+    Level,
     Result,
+    Rule,
     Skip,
     SkipReason,
     Verb,
@@ -162,13 +164,7 @@ class Protect:
         # One line each, whatever a value in it holds: a note names files and what they hold (#161).
         notes = [strip_controls(note) for note in notes]
         if not changes:
-            unfinished = any(skip.in_scope for skip in collector.skipped)
-            done = (
-                "Nothing to write."
-                if unfinished
-                else "Nothing to write: every installation Guardian found and can write is protected."
-            )
-            _say(err, [*notes, done])
+            _say(err, [*notes, _nothing_to_write(collector)])
             return collector.result()
 
         lines = ["Guardian will write its cooldown setting (and nothing else):", *(c.line() for c in changes)]
@@ -292,6 +288,26 @@ class Protect:
                 continue
             written.append(change.setting.place)
         _say(err, [f"Written: {strip_controls(place)}" for place in written])
+
+
+def _nothing_to_write(collector: Collector) -> str:
+    """The closing line when nothing is written. "Every installation ... is protected" only when
+    the run reported no violation and finished every check: an installation reported
+    ``unprotected`` above is never then called protected (#302)."""
+    if any(skip.in_scope for skip in collector.skipped):
+        return "Nothing to write."
+    if not any(f.level is Level.VIOLATION for f in collector.findings):
+        return "Nothing to write: every installation Guardian found and can write is protected."
+    count = len({f.place for f in collector.findings if f.rule is Rule.UNPROTECTED})
+    # The report (stdout, or the JSON) is written after this line: "see the report", not "above".
+    if not count:
+        return "Nothing to write; see the report."
+    what = (
+        "installation cannot be protected as it stands"
+        if count == 1
+        else "installations cannot be protected as they stand"
+    )
+    return f"Nothing to write: {count} {what}; see the report."
 
 
 def _say(err: TextIO | None, lines: list[str]) -> None:

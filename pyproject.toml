@@ -7,16 +7,46 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssc-guardian"
-version = "1.0.0"
+version = "1.0.1"
 description = "Software Supply Chain Guardian: checks Python environments and GitHub Actions against supply-chain rules."
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Thomas C. Burns" }]
 requires-python = ">=3.11"
+keywords = [
+    "supply-chain",
+    "security",
+    "cooldown",
+    "pip",
+    "uv",
+    "github-actions",
+    "pinning",
+    "malware",
+    "vulnerabilities",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
 # Zero runtime dependencies: the core uses only Python's standard library.
 # Development tools are never listed here.
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/thomascburns/ssc-guardian"
+Source = "https://github.com/thomascburns/ssc-guardian"
+Issues = "https://github.com/thomascburns/ssc-guardian/issues"
+Security = "https://github.com/thomascburns/ssc-guardian/blob/main/SECURITY.md"
+Changelog = "https://github.com/thomascburns/ssc-guardian/blob/main/docs/changelog.md"
 
 [project.scripts]
 ssc-guardian = "ssc_guardian.cli:main"

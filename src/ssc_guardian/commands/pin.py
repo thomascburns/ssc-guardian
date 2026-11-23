@@ -775,7 +775,7 @@ def _apply(change: _Change, collector: Collector, err: TextIO) -> None:
     # backstop behind it (#151).
     outside = [path for path, _ in writes if path not in change.plan.also_writes and not _inside(root, path)]
     if outside:
-        _say(err, [f"ssc-guardian: {strip_controls(outside[0])} is not part of the pin's plan (D16); nothing written."])
+        _say(err, [f"ssc-guardian: {strip_controls(outside[0])} is not part of the pin's plan; nothing written."])
         collector.skipped.append(
             Skip(GHA, root, SkipReason.CHECK_ERROR, detail="not part of the plan", site="pin.write-outside-plan")
         )

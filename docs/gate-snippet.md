@@ -10,19 +10,33 @@ the hash together.
 ## The commit gate
 
 Save this as `.git/hooks/pre-commit` in the repository and make it executable
-(`chmod +x .git/hooks/pre-commit`), or call it from the repository's own commit gate.
+(`chmod +x .git/hooks/pre-commit`), or call it from the repository's own commit gate. Git does not
+version the `.git/hooks/` folder. To keep the hook in the repository, save it in a versioned
+folder instead, for example `.githooks/pre-commit`, and point Git at that folder with
+`git config core.hooksPath .githooks` (once in each clone).
 
-The gate is only as trustworthy as the hash you pin. Take it from a wheel you have already
-verified with `gh attestation verify` ([SECURITY.md](../SECURITY.md)):
-`shasum -a 256 ssc_guardian-1.0.0-py3-none-any.whl`, and put it in `GUARDIAN_SHA256`.
+The gate is only as trustworthy as the hash you pin. Each release gives the wheel's SHA-256 in
+its release notes and in a file attached beside the wheel, `<wheel>.sha256`. Download both,
+verify the wheel with `gh attestation verify` as [SECURITY.md](../SECURITY.md) shows, then check
+the wheel against the file:
+
+```sh
+gh release download v1.0.1-reference -R thomascburns/ssc-guardian -p 'ssc_guardian-*'
+shasum -a 256 -c ssc_guardian-1.0.1-py3-none-any.whl.sha256
+```
+
+`shasum` prints `OK` when the wheel matches. The `.sha256` file comes from the same release as the
+wheel, so it confirms the download; the attestation is what ties the wheel to Guardian's release
+workflow. Put the hash, the first word of the `.sha256` file and the one in the release notes, in
+`GUARDIAN_SHA256`.
 
 ```sh
 #!/bin/sh
 # ssc-guardian commit gate: pinned version, wheel SHA-256 checked on every run.
 set -eu
 
-GUARDIAN_TAG="v1.0-reference"
-GUARDIAN_WHEEL="ssc_guardian-1.0.0-py3-none-any.whl"
+GUARDIAN_TAG="v1.0.1-reference"
+GUARDIAN_WHEEL="ssc_guardian-1.0.1-py3-none-any.whl"
 GUARDIAN_SHA256="<the wheel's SHA-256>"
 
 CACHE="$HOME/.cache/ssc-guardian-gate/$GUARDIAN_TAG"
@@ -46,8 +60,8 @@ exec uvx --from "$WHEEL" ssc-guardian check --repo .
 
 - The first run downloads the wheel; later runs use the cached file and check its hash again.
 - The gate checks the working tree, not the staged snapshot: an unstaged change to a workflow or
-  a Guardian file is checked though it isn't committed, and a staged version that differs from it
-  isn't. Stage the whole change before you commit.
+  a Guardian file is checked though it isn't committed. A staged version that differs from it is
+  not checked. Stage the whole change before you commit.
 - A mismatch exits 2 before Guardian runs. Find out why the file changed before you delete it
   from the cache and download it again.
 - `ssc-guardian check --repo .` exits 0 when every rule is met, 1 on a violation and 2 when a
@@ -74,8 +88,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     env:
-      GUARDIAN_TAG: v1.0-reference
-      GUARDIAN_WHEEL: ssc_guardian-1.0.0-py3-none-any.whl
+      GUARDIAN_TAG: v1.0.1-reference
+      GUARDIAN_WHEEL: ssc_guardian-1.0.1-py3-none-any.whl
       GUARDIAN_SHA256: "<the wheel's SHA-256>"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

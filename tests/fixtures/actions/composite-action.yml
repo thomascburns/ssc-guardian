@@ -1,0 +1,13 @@
+# id: composite-action
+# Faithful: the shape of a published composite action.yml: runs.using, then steps that call another
+#   Action or run a shell command, which T5 reads at the pinned outer commit.
+# Modelled: the Action and its inner Action, someone/inner, which are made up; the fixture GitHub
+#   of tests/unit/test_nested_and_advisories.py serves this file, never the network.
+name: Composite example
+description: Calls one Action by tag and runs one command.
+runs:
+  using: composite
+  steps:
+    - uses: someone/inner@v2
+    - run: echo done
+      shell: bash

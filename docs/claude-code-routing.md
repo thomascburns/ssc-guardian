@@ -85,12 +85,12 @@ What each deny rule stops:
 | `Bash(ssc-guardian override add)` | `ssc-guardian override add` |
 | `Bash(ssc-guardian override add *)` | `ssc-guardian override add --yes` |
 | `Bash(ssc-guardian acknowledge *)` | `ssc-guardian acknowledge example/action` |
-| `Bash(uvx --from * ssc-guardian override add)` | `uvx --from ./ssc_guardian-1.0.0-py3-none-any.whl ssc-guardian override add` |
-| `Bash(uvx --from * ssc-guardian override add *)` | `uvx --from ./ssc_guardian-1.0.0-py3-none-any.whl ssc-guardian override add --yes` |
-| `Bash(uvx --from * ssc-guardian acknowledge *)` | `uvx --from ./ssc_guardian-1.0.0-py3-none-any.whl ssc-guardian acknowledge example/action` |
-| `Bash(uv tool run --from * ssc-guardian override add)` | `uv tool run --from ./ssc_guardian-1.0.0-py3-none-any.whl ssc-guardian override add` |
-| `Bash(uv tool run --from * ssc-guardian override add *)` | `uv tool run --from ./ssc_guardian-1.0.0-py3-none-any.whl ssc-guardian override add --yes` |
-| `Bash(uv tool run --from * ssc-guardian acknowledge *)` | `uv tool run --from ./ssc_guardian-1.0.0-py3-none-any.whl ssc-guardian acknowledge example/action` |
+| `Bash(uvx --from * ssc-guardian override add)` | `uvx --from ./ssc_guardian-1.0.1-py3-none-any.whl ssc-guardian override add` |
+| `Bash(uvx --from * ssc-guardian override add *)` | `uvx --from ./ssc_guardian-1.0.1-py3-none-any.whl ssc-guardian override add --yes` |
+| `Bash(uvx --from * ssc-guardian acknowledge *)` | `uvx --from ./ssc_guardian-1.0.1-py3-none-any.whl ssc-guardian acknowledge example/action` |
+| `Bash(uv tool run --from * ssc-guardian override add)` | `uv tool run --from ./ssc_guardian-1.0.1-py3-none-any.whl ssc-guardian override add` |
+| `Bash(uv tool run --from * ssc-guardian override add *)` | `uv tool run --from ./ssc_guardian-1.0.1-py3-none-any.whl ssc-guardian override add --yes` |
+| `Bash(uv tool run --from * ssc-guardian acknowledge *)` | `uv tool run --from ./ssc_guardian-1.0.1-py3-none-any.whl ssc-guardian acknowledge example/action` |
 | `Bash(* -m ssc_guardian override add)` | `python3 -m ssc_guardian override add` |
 | `Bash(* -m ssc_guardian override add *)` | `python3 -m ssc_guardian override add --yes` |
 | `Bash(* -m ssc_guardian acknowledge *)` | `python -m ssc_guardian acknowledge example/action` |
@@ -108,8 +108,9 @@ What each deny rule stops:
   Deny them only if the project does not rely on them. `Bash(uvx *)` and `Bash(uv tool run *)`
   are optional too: uv's user config gives them the cooldown once `protect` wrote it there, and
   denying them also blocks `uvx` calls of Guardian.
-- **File edits.** The four `Edit` rules keep the agent away from Guardian's settings, override
-  and lock files. An `Edit` rule covers every built-in tool that edits files; a `Write(...)` path
+- **File edits.** The four `Edit` rules keep the agent away from your Guardian settings,
+  override and lock files. An `Edit` rule covers every built-in tool that edits files; a
+  `Write(...)` path
   rule never matches, so do not use one. How a path starts decides where it is anchored: `//` at
   the filesystem root, `~/` at the home folder, and a single `/` at the session's primary working
   directory (the folder the session started in, or moved to with `/cd`), not at the repository
@@ -226,9 +227,9 @@ That file has the same limit as the rules in part 3. Claude Code's permissions p
 fallback", so a session started in a subfolder of the repository does not run this hook. To
 cover it, also register the hook in `.claude/settings.local.json`, which Claude Code reads from
 the repository root wherever the session starts, or in your user settings,
-`~/.claude/settings.json`, which apply in every project. In either file, give the script's absolute path in place of
-`$CLAUDE_PROJECT_DIR`: Claude Code's hooks page defines that variable only as "the project root
-where the session started".
+`~/.claude/settings.json`, which apply in every project. In either file, give the script's
+absolute path in place of `$CLAUDE_PROJECT_DIR`: Claude Code's hooks page defines that variable
+only as "the project root where the session started".
 
 The hook reads the tool call from standard input and finds the command in
 `tool_input.command`. Exit code 2 blocks the call, and Claude sees the message written to

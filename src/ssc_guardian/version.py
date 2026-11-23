@@ -136,7 +136,7 @@ class VersionAction(argparse.Action):
         option_strings: Sequence[str],
         version: str,
         dest: str = argparse.SUPPRESS,
-        help: str = "show the version, and the Git commit of a Git install, and exit",
+        help: str = "show the version and exit",
         stdout: TextIO | None = None,
         stderr: TextIO | None = None,
     ) -> None:

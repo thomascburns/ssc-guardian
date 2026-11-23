@@ -983,8 +983,10 @@ def _file_cooldowns(
         shown, filename = _shown(name, version), strip_controls(_file_name(planned.url))
         if when is None:
             _say(err, [f"{shown}: PyPI gives no upload time for {filename}, so its age is unknown."])
-            if failure is None:
-                failure = IncompleteCheckError(SkipReason.UNKNOWN_AGE, site="install.bound-file-unknown-age")
+            if failure is None:  # names the package as check's unknown-age skip does (#284)
+                failure = IncompleteCheckError(
+                    SkipReason.UNKNOWN_AGE, detail=_age_detail(name, version), site="install.bound-file-unknown-age"
+                )
             continue
         days = settings.cooldown_days(PYPI, name)
         started = policy.cooldown_start(when)
@@ -1121,6 +1123,14 @@ def _file_name(url: str) -> str:
     """The URL's last path segment, percent-decoded: it can hold a line break (``%0A``), so a
     message strips it as it goes in (#161)."""
     return urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
+
+
+def _age_detail(name: str, version: str) -> str | None:
+    """An unknown-age skip's text-only detail: the normalized name and the version as pip gives
+    it (#298, #284); None when either fails its grammar, so a malformed value is never shown."""
+    if not (matches(Field.PYPI_NAME, name) and matches(Field.PEP440_VERSION, version)):
+        return None
+    return f"{normalize_pypi_name(name)} {version}"
 
 
 def _shown(name: str, version: str) -> str:

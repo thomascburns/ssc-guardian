@@ -19,8 +19,10 @@ The frame parses and validates every argument against its field grammar,
 builds the check scope from the filters, calls the verb's handler and renders
 its result. A malformed argument is a malformed-name violation (exit 1). A
 handler that raises gives exit 2, never Python's default exit 1, which would
-read as a violation. Handlers for the verbs arrive with later issues; until
-then each verb reports its area as not available (exit 2).
+read as a violation. Each verb has its handler (``check``, ``protect``,
+``install``, ``pin``, ``acknowledge`` and ``override add``); an area or a
+``--path`` the handler did not report is an unfinished check (exit 2), never
+a pass.
 """
 
 from __future__ import annotations
@@ -218,7 +220,9 @@ def build_parser(*, stdout: TextIO | None = None, stderr: TextIO | None = None) 
         description="Software Supply Chain Guardian: checks Python environments and GitHub Actions.",
         **streams,
     )
-    parser.add_argument("--version", action=VersionAction, version=tool_version(), **streams)
+    parser.add_argument(
+        "--version", action=VersionAction, version=tool_version(), help="show the version and exit", **streams
+    )
     verbs = parser.add_subparsers(dest="verb", required=True, metavar="command")
 
     output = _Parser(add_help=False)
@@ -239,13 +243,19 @@ def build_parser(*, stdout: TextIO | None = None, stderr: TextIO | None = None) 
     protect = verbs.add_parser(
         "protect", parents=[output, confirm_flag], help="write the installers' cooldown under --path", **streams
     )
-    protect.add_argument("installer", nargs="?", choices=[i.value for i in Installer])
+    protect.add_argument(
+        "installer",
+        nargs="?",
+        choices=[i.value for i in Installer],
+        help="which installer's setting to write (pip or uv); when omitted, pip, and uv where a --path covers "
+        "its config",
+    )
     protect.add_argument(
         "--path", action="append", required=True, metavar="PATH", help="a place to protect (repeatable, required)"
     )
 
     install = verbs.add_parser("install", parents=[output, confirm_flag], help="checked install into a venv", **streams)
-    install.add_argument("--venv", required=True, metavar="PATH")
+    install.add_argument("--venv", required=True, metavar="PATH", help="the virtual environment to install into")
     install.add_argument("packages", nargs="+", metavar="package", help="NAME or NAME==VERSION")
 
     pin = verbs.add_parser("pin", parents=[output, confirm_flag], help="verify and pin an Action version", **streams)
@@ -489,10 +499,12 @@ def confirm(change: str, *, verb: Verb, yes: bool, stdin: TextIO | None, stdout:
 
     ``--yes`` confirms in advance, except for the exception commands, which a
     person confirms at a terminal. Without a terminal there is no confirmation,
-    and no stdin (``sys.stdin`` is None when fd 0 was closed) is no terminal.
-    A change or prompt that cannot be shown (a closed or broken stream, or none:
-    ``sys.stderr`` is None when fd 2 was closed) is not confirmed either, and stdin
-    is not read: a question the person could not see is never a yes (contracts §3).
+    and no stdin (``sys.stdin`` is None when fd 0 was closed) is no terminal: the
+    change is still shown, so a person or script sees what ``--yes`` would do, but
+    no question is asked and stdin is never read (#284). A change or prompt that
+    cannot be shown (a closed or broken stream, or none: ``sys.stderr`` is None when
+    fd 2 was closed) is not confirmed either, and stdin is not read: a question the
+    person could not see is never a yes (contracts §3).
 
     ``change`` is shown line by line as the caller built it: each value from a file, a file
     name or the network must already be stripped of line breaks (``strip_controls``) before it
@@ -501,9 +513,11 @@ def confirm(change: str, *, verb: Verb, yes: bool, stdin: TextIO | None, stdout:
     """
     if yes and not verb.person_only:
         return True
+    shown = "\n".join(strip_controls(line) for line in change.splitlines())
     if stdin is None or not stdin.isatty():
+        _show(stdout, shown + "\n")  # shown or not, there is no confirmation without a terminal
         return False
-    if not _show(stdout, "\n".join(strip_controls(line) for line in change.splitlines()) + "\nProceed? [y/N] "):
+    if not _show(stdout, shown + "\nProceed? [y/N] "):
         return False
     return stdin.readline().strip().lower() in {"y", "yes"}
 

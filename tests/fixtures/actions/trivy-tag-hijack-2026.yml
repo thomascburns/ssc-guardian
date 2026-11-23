@@ -1,0 +1,17 @@
+# id: trivy-tag-hijack-2026
+# The Trivy Action tag hijack of 2026-03-19: stolen credentials force-pushed 76 of the 77 tags of
+#   aquasecurity/trivy-action to commits that stole the runner's secrets (GHSA-69fq-xp46-6x23).
+# Faithful: the Action's name, and a consumer's workflow that uses it by tag, so every run takes
+#   whatever commit the tag names that day; the attack date and the advisory ID.
+# Modelled: the workflow itself, the tag 0.28.0 standing for any of the 76 moved tags, the commits
+#   before and after the move, the advisory's version range and fixed version, and the day it
+#   appears (the day after the attack). The tests in
+#   tests/integration/test_attack_replays.py serve them from the fixture GitHub of
+#   tests/unit/test_nested_and_advisories.py and tests/unit/test_pinning.py, never the network.
+name: scan
+on: [push]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aquasecurity/trivy-action@0.28.0

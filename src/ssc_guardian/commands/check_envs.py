@@ -114,7 +114,8 @@ _REMOVE_INDEX = "the cooldown does not hold for its files; remove it, then run c
 
 def unprotected(place: str, verdict: pip.Verdict, installer: Installer, *, writable: bool = True) -> Finding:
     """The ``unprotected`` violation. Its fix is ``protect`` only where running it fixes it: not
-    for a pip that ignores the setting (upgrade pip or exclude the installation), an override
+    for a pip that ignores the setting (upgrade pip, or below Python 3.10 recreate the venv or
+    use a newer Python, or leave the installation out of the paths named), an override
     from outside the file (remove it), or a file Guardian cannot write (an administrator)."""
     fixable = writable and verdict not in _NOT_BY_PROTECT
     options = (protect_option(installer, place),) if fixable else ()
@@ -164,11 +165,15 @@ class CheckEnvs:
         root: str | None = None
         if GHA in scope.ecosystems:
             root = scope.repo or find_repository_root(self.cwd or os.getcwd())
+        held: list[str] = []
         if PYPI in scope.ecosystems:
-            self._envs(scope.paths, collector, notes, alone=GHA not in scope.ecosystems)
+            held = self._envs(scope.paths, collector, notes, alone=GHA not in scope.ecosystems)
         if GHA in scope.ecosystems:
             self._repository(root, scope.paths, collector, notes)
-        _say(self.stderr or sys.stderr, [f"ssc-guardian: {note}" for note in notes])
+        # A held-back place the Actions side did not report gets the handler's own reason (#284).
+        collector.skipped += [_no_environment(place) for place in held if not _reported(GHA, place, collector)]
+        # Each distinct line once (#284): one stop, such as GitHub's rate limit, ends many requests.
+        _say(self.stderr or sys.stderr, [f"ssc-guardian: {note}" for note in dict.fromkeys(notes)])
         return collector.result()
 
     def roots(self) -> Roots:
@@ -189,10 +194,11 @@ class CheckEnvs:
         roots = self.roots()
         check_repo.CheckRepo(roots.home, roots.environ, self.today, self.client).run(root, paths, collector, notes)
 
-    def _envs(self, paths: tuple[str, ...], collector: Collector, notes: list[str], *, alone: bool = True) -> None:
+    def _envs(self, paths: tuple[str, ...], collector: Collector, notes: list[str], *, alone: bool = True) -> list[str]:
         """The Python environments at or under ``paths``. ``alone``: no other area is checked, so a
-        named path where no environment is found is unfinished here; with GitHub Actions in scope
-        too, that area may report it, and ``cli._with_coverage`` makes it unfinished if none does."""
+        named path where no environment is found is unfinished here. With GitHub Actions in scope
+        too, that area may report it, so those places are returned instead, held back for the
+        caller to report once that area has run (#284); ``cli._with_coverage`` stays the backstop."""
         roots = self.roots()
         today = self.today or utc_today()
         try:
@@ -200,7 +206,7 @@ class CheckEnvs:
         except ConfigFileError as exc:
             collector.skipped.append(exc.skip(PYPI))  # nothing in the file applies, no defaults either
             notes.append(str(exc))
-            return
+            return []
         overrides = load_workstation_overrides(roots, today, collector, notes)  # on every run (§10.1)
         cooldown, tolerance = cooldown_of(settings)
         found = discovery.survey(roots, paths)  # only what the paths name (#255)
@@ -224,15 +230,13 @@ class CheckEnvs:
             why = "outside the named paths; name that file with --path"
             notes.append(f"{uv.config_path(roots)} leads to {escaped}, {why}")
         # A named path that holds nothing checked is unfinished at that place, never a pass.
-        collector.skipped += (
-            []
-            if not alone
-            else [
-                Skip(PYPI, place, SkipReason.CHECK_ERROR, detail=discovery.NO_ENVIRONMENT, site="check_envs.empty-path")
-                for place in found.empty
-                if not ((read_uv_config or escaped is not None) and place in uv_paths)  # uv's file reports it
-            ]
-        )
+        empty = [
+            place
+            for place in found.empty
+            if not ((read_uv_config or escaped is not None) and place in uv_paths)  # uv's file reports it
+        ]
+        held = [] if alone else empty
+        collector.skipped += [_no_environment(place) for place in empty] if alone else []
 
         sources = pip.Sources.of(roots)
         for env in found.environments:
@@ -279,6 +283,7 @@ class CheckEnvs:
 
         self._packages(found.environments, settings, today, collector, notes, roots, overrides)
         collector.findings += settings.notices()
+        return held
 
     def _pip_finding(
         self,
@@ -553,6 +558,19 @@ def _judge_project(project: uv.Project, cooldown: int, today: date, collector: C
                 f"{p}; uv prefers it to the user file in {folder}: change or remove it, then run check again"
                 for p in problems
             ]
+
+
+def _no_environment(place: str) -> Skip:
+    """A named path that holds nothing checked: unfinished at that place, never a pass."""
+    return Skip(PYPI, place, SkipReason.CHECK_ERROR, detail=discovery.NO_ENVIRONMENT, site="check_envs.empty-path")
+
+
+def _reported(ecosystem: Ecosystem, place: str, collector: Collector) -> bool:
+    """Whether ``ecosystem`` reported ``place``: a ``Checked`` entry or an in-scope skip at that
+    place or inside it, as ``cli._with_coverage`` counts a report."""
+    places = [c.place for c in collector.checked if c.ecosystem is ecosystem]
+    places += [s.place for s in collector.skipped if s.ecosystem is ecosystem and s.in_scope]
+    return any(p is not None and os.path.commonpath([p, place]) == place for p in places)
 
 
 def _has_pip(env: discovery.Environment, assessment: pip.Assessment | None) -> bool:

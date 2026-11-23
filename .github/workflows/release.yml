@@ -1,18 +1,23 @@
 # Copyright 2026 Thomas C. Burns
 # SPDX-License-Identifier: Apache-2.0
 #
-# Release workflow (plan §5 "Release workflow" and "Release testing").
+# Release workflow.
+#
+# This file is shared: the same file runs in the public repository and in the
+# development repository Guardian is built in, and its jobs choose what to run
+# by the repository's name.
 #
 # - Public repository (thomascburns/ssc-guardian): only a pushed tag
-#   v*-reference runs it, so the wheel is always built from the tagged commit.
-#   It builds the wheel, attests it (keyless Sigstore signing through GitHub, no
-#   named key) and creates the release as a draft with the wheel and its SHA-256
-#   attached. Files must be attached while a release is a draft (plan §8 fact
-#   16); the owner publishes only after the clean-Mac test. A wheel whose
-#   version does not match a release tag is refused.
+#   v<major>.<minor>.<patch>-reference runs it, so the wheel is always built
+#   from the tagged commit. It builds the wheel, attests it (keyless Sigstore
+#   signing through GitHub, no named key) and creates the release as a draft
+#   with the wheel and its SHA-256 attached. Files must be attached while a
+#   release is a draft, since GitHub makes a published release immutable; the
+#   owner publishes only after the clean-Mac test. A wheel whose version does
+#   not match its release tag is refused.
 # - Development repository: the rehearsal. Only a manual run starts its jobs
 #   (a tag pushed there runs no job); the same jobs run without the attestation
-#   step, which needs a public repository on this plan (fact 15).
+#   step, which GitHub offers a private repository only on Enterprise Cloud.
 #
 # Least privilege: the workflow reads only; `build` runs the build tool with a
 # read-only token and no OIDC token; `attest` alone may mint an OIDC token and
@@ -30,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Rehearsal tag (development repository only), for example v1.0-rc1-reference"
+        description: "Rehearsal tag (development repository only), for example v1.0.1-rc1-reference"
         required: true
         type: string
 
@@ -56,8 +61,8 @@ jobs:
     steps:
       - name: Check the release tag
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){1,2}(-rc[0-9]+)?-reference$ ]]; then
-            echo "Refusing release tag '$RELEASE_TAG': expected v<major>.<minor>[.<patch>][-rc<n>]-reference." >&2
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?-reference$ ]]; then
+            echo "Refusing release tag '$RELEASE_TAG': expected v<major>.<minor>.<patch>[-rc<n>]-reference." >&2
             exit 1
           fi
           # Rehearsal (-rc<n>) tags belong to the development repository; the public one releases only real versions.
@@ -94,8 +99,8 @@ jobs:
           fi
           sha256sum "${wheels[0]}" > "${wheels[0]}.sha256"
           cat "${wheels[0]}.sha256"
-      # A release tag v1.0-reference or v1.0.1-reference needs wheel version 1.0.0 or 1.0.1; a
-      # rehearsal tag (-rc<n>) is never published, so it builds whatever version is checked in.
+      # A release tag v1.0.1-reference needs wheel version 1.0.1; a rehearsal tag (-rc<n>) is
+      # never published, so it builds whatever version is checked in.
       - name: Check the wheel version against the tag
         working-directory: dist
         run: |
@@ -108,9 +113,6 @@ jobs:
           fi
           want="${RELEASE_TAG#v}"
           want="${want%-reference}"
-          if [[ "$want" =~ ^[0-9]+\.[0-9]+$ ]]; then
-            want="$want.0"
-          fi
           if [ "$version" != "$want" ]; then
             echo "Refusing: tag $RELEASE_TAG needs wheel version $want, but the wheel is $version." >&2
             exit 1
@@ -127,7 +129,7 @@ jobs:
 
   attest:
     needs: build
-    # Public repository only: the rehearsal is the same workflow without this step (plan §5).
+    # Public repository only: the rehearsal is the same workflow without this step.
     if: github.repository == 'thomascburns/ssc-guardian'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -167,6 +169,12 @@ jobs:
         working-directory: dist
         run: sha256sum -c ssc_guardian-*-py3-none-any.whl.sha256
       # A draft: the owner publishes by hand after the clean-Mac test; publishing makes it immutable.
+      # Publishing keeps the notes, so they read true on the draft and on the published release:
+      # what the release is, the commit, the wheel and its SHA-256, how to verify the wheel
+      # (SECURITY.md), and a Known issues line the owner replaces when reviewing the notes before
+      # publishing. The links name the public repository at the release tag, never
+      # the development repository; a rehearsal draft's links name a tag the public repository
+      # lacks, which is fine: rehearsal drafts are never published.
       - name: Create the draft release
         working-directory: dist
         env:
@@ -174,8 +182,18 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           wheel="$(ls ssc_guardian-*-py3-none-any.whl)"
+          sha256="$(cut -d' ' -f1 <"$wheel.sha256")"
+          notes="Software Supply Chain Guardian $RELEASE_TAG: a reference implementation, not for production, with no support or stability promise.
+
+          - Built by the release workflow from commit $GITHUB_SHA.
+          - Wheel: $wheel
+          - SHA-256: $sha256
+
+          Verify the wheel before you install it: see \"Verify a release before you install it\" in [SECURITY.md](https://github.com/thomascburns/ssc-guardian/blob/$RELEASE_TAG/SECURITY.md).
+
+          Known issues: see [Known limits](https://github.com/thomascburns/ssc-guardian/blob/$RELEASE_TAG/README.md#known-limits) in the README."
           gh release create "$RELEASE_TAG" "$wheel" "$wheel.sha256" \
             --draft \
             --target "$GITHUB_SHA" \
             --title "$RELEASE_TAG" \
-            --notes "Draft built by the release workflow from $GITHUB_SHA. Verify the wheel before publishing (SECURITY.md)."
+            --notes "$notes"
