@@ -15,6 +15,9 @@
   title such as "ssc-guardian reference"). The summary line (``ssc-guardian check: ...``) passes
   because ``check`` is a verb, and the footer (``ssc-guardian 1.0.0, exit 0: ...``) because a
   version is not a word. A misspelled verb fails.
+- README.md's March 2025 attack example follows its sources (#377): it never says
+  ``tj-actions/changed-files`` called ``reviewdog/action-setup`` or that the code ran in "every
+  workflow", and it says "Investigators believe". A README with no such paragraph fails.
 
 Each check is a function that returns the problems it finds: the real files give none, and a
 planted copy gives at least one. The checks read files only and give the same result on a re-run.
@@ -87,6 +90,14 @@ GUARDIAN_WORD = re.compile(r"(?<![\w/.-])ssc-guardian[ \t]+([a-z][a-z-]*)(?![\w-
 # its own venv", "the ssc-guardian repository" and the gate script's "ssc-guardian commit gate" and
 # "ssc-guardian gate:" lines.
 ORDINARY_WORDS = frozenset({"reference", "contracts", "into", "repository", "commit", "gate"})
+ATTACK_HEADING = "GitHub Actions: one example from March 2025"
+# The account the sources refute: changed-files called reviewdog/action-setup, and the moved tag
+# ran code in every workflow that used tj-actions. "called" is read within one sentence.
+ATTACK_MISREADINGS = (
+    (re.compile(r"\bcalled\b[^.]*?\breviewdog/action-setup\b"), "says changed-files called reviewdog/action-setup"),
+    (re.compile(r"\bevery workflow\b", re.IGNORECASE), 'says the code ran in "every workflow"'),
+)
+ATTACK_HEDGE = "Investigators believe"
 
 Problems = list[str]
 
@@ -208,6 +219,35 @@ def command_problems(rel: str, text: str, known: frozenset[str]) -> Problems:
         for match in GUARDIAN_WORD.finditer(line)
         if match.group(1) not in known and match.group(1) not in ORDINARY_WORDS
     ]
+
+
+def _first_paragraph(text: str, heading: str) -> str:
+    """The first paragraph under *text*'s ``## heading``, or "" when there is none."""
+    section = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
+    if not section:
+        return ""
+    blocks = [block.strip() for block in re.split(r"\n\s*\n", section.group(1)) if block.strip()]
+    return blocks[0] if blocks else ""
+
+
+def attack_example_problems(text: str) -> Problems:
+    """README.md's March 2025 example must follow its sources.
+
+    Wiz says the moved reviewdog tag likely exposed a token (CISA: "potentially enabled"), and NVD
+    that the attackers then pointed ``tj-actions/changed-files``' own tags at a malicious commit;
+    the link is hedged, and the exposure had a window.
+    A README with no such paragraph is a problem, never a pass.
+    """
+    paragraph = _first_paragraph(text, ATTACK_HEADING)
+    if not paragraph:
+        return [f"{README} has no paragraph under {ATTACK_HEADING!r}"]
+    prose = " ".join(re.sub(r"[`\[\]]", "", LINK_TARGET.sub("]", paragraph)).split())
+    problems = [
+        f"the attack example {what}: {prose!r}" for pattern, what in ATTACK_MISREADINGS if pattern.search(prose)
+    ]
+    if ATTACK_HEDGE not in prose:
+        problems.append(f"the attack example lacks {ATTACK_HEDGE!r}: {prose!r}")
+    return problems
 
 
 # --- tests ---------------------------------------------------------------------------
@@ -341,6 +381,56 @@ def test_planted_misspelled_command_fails() -> None:
     assert command_problems("x.md", output, known) == []
     # A repository name is not the command.
     assert command_problems("x.md", "gh release download -R thomascburns/ssc-guardian -p x\n", known) == []
+
+
+OLD_ATTACK_PARAGRAPH = (
+    "`tj-actions/changed-files` (CVE-2025-30066,\n"
+    "[GHSA-mrrh-fwg8-r2c3](https://github.com/advisories/GHSA-mrrh-fwg8-r2c3)) called\n"
+    "`reviewdog/action-setup@v1` by tag (CVE-2025-30154,\n"
+    "[GHSA-qmg3-hpqr-gqvc](https://github.com/advisories/GHSA-qmg3-hpqr-gqvc)). Attackers moved that\n"
+    "tag, and the code ran inside every workflow that used tj-actions. Both CVEs are in CISA's Known\n"
+    "Exploited Vulnerabilities catalog."
+)
+
+
+def test_readme_attack_example_follows_the_sources() -> None:
+    readme = _read(README)
+    paragraph = _first_paragraph(readme, ATTACK_HEADING)
+    # The scenario: the real README passes.
+    assert attack_example_problems(readme) == []
+    assert paragraph.startswith("Attackers briefly pointed") and "Investigators believe this" in paragraph
+    # Negative: the old account, "called `reviewdog/action-setup@v1` by tag", fails on all counts.
+    old = readme.replace(paragraph, OLD_ATTACK_PARAGRAPH)
+    assert old != readme
+    problems = attack_example_problems(old)
+    assert len(problems) == 3, problems
+    assert "says changed-files called reviewdog/action-setup" in problems[0]
+    assert 'says the code ran in "every workflow"' in problems[1]
+    assert "lacks 'Investigators believe'" in problems[2]
+    # Negative: the caller claim alone fails, even beside the hedge; a link between the words
+    # does not hide it.
+    caller = readme.replace(
+        paragraph, paragraph + "\nIt called [`reviewdog/action-setup`](https://github.com/reviewdog/action-setup)."
+    )
+    assert caller != readme
+    assert [p.split(":")[0] for p in attack_example_problems(caller)] == [
+        "the attack example says changed-files called reviewdog/action-setup"
+    ]
+    # Edge case: the new wording that keeps "every workflow that used tj-actions" fails.
+    every = readme.replace(paragraph, paragraph + "\nThe code ran inside every workflow that used tj-actions.")
+    assert every != readme
+    assert [p.split(":")[0] for p in attack_example_problems(every)] == [
+        'the attack example says the code ran in "every workflow"'
+    ]
+    # Error path: a README with no attack paragraph fails with a message, never passes.
+    expected = [f"{README} has no paragraph under {ATTACK_HEADING!r}"]
+    no_heading = readme.replace(f"## {ATTACK_HEADING}\n", "## Another heading\n")
+    assert no_heading != readme
+    assert attack_example_problems(no_heading) == expected
+    assert attack_example_problems(f"## {ATTACK_HEADING}\n\n## Usage patterns\n") == expected
+    assert attack_example_problems("") == expected
+    # Idempotent: the guard only reads the text.
+    assert attack_example_problems(old) == problems
 
 
 def test_checks_are_idempotent() -> None:

@@ -286,12 +286,12 @@ other setting says.
 
 ## GitHub Actions: one example from March 2025
 
-`tj-actions/changed-files` (CVE-2025-30066,
-[GHSA-mrrh-fwg8-r2c3](https://github.com/advisories/GHSA-mrrh-fwg8-r2c3)) called
-`reviewdog/action-setup@v1` by tag (CVE-2025-30154,
-[GHSA-qmg3-hpqr-gqvc](https://github.com/advisories/GHSA-qmg3-hpqr-gqvc)). Attackers moved that
-tag, and the code ran inside every workflow that used tj-actions. Both CVEs are in CISA's Known
-Exploited Vulnerabilities catalog
+Attackers briefly pointed the v1 tag of the GitHub Action `reviewdog/action-setup` at their own
+code (CVE-2025-30154, [GHSA-qmg3-hpqr-gqvc](https://github.com/advisories/GHSA-qmg3-hpqr-gqvc)).
+Investigators believe this exposed a token that let them change `tj-actions/changed-files`
+(CVE-2025-30066, [GHSA-mrrh-fwg8-r2c3](https://github.com/advisories/GHSA-mrrh-fwg8-r2c3)), whose
+tags then pointed at code that printed secrets into the build logs of the projects using it. Both
+flaws are in CISA's Known Exploited Vulnerabilities catalog
 ([CISA's alert](https://www.cisa.gov/news-events/alerts/2025/03/18/supply-chain-compromise-third-party-tj-actionschanged-files-cve-2025-30066-and-reviewdogaction)).
 
 Guardian's answer, threat by threat:
